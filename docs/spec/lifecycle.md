@@ -286,6 +286,15 @@ kubectl get events --field-selector involvedObject.kind=Workload
 [Steady State Monitoring]
 ```
 
+### Image resolution
+
+- If `containers.*.image != "."`, the value is treated as a concrete OCI reference.
+- If `containers.*.image == "."`, the Orchestrator expects an image to be supplied at deploy time:
+  - Typically via a `ResourceBinding` of type `image|build|buildpack` resolved by a Resolver that builds and pushes an image.
+  - The `WorkloadPlan` carries a projection such as:
+    - `containers[].imageFrom: { bindingKey, outputKey: "image" }`
+  - The Runtime consumes the plan plus binding outputs to set the final image used for execution.
+
 ### Endpoint population & aggregation
 
 - Runtime determines an endpoint (if any) based on the chosen platform.

@@ -23,6 +23,9 @@ It complements:
 - **Watches:** `ResourceBinding` for its `spec.type`; own `Secret/ConfigMap`; external service APIs as needed
 - **Creates/updates (objects):** `Secret/ConfigMap` with credentials/config (same namespace)
 - **Updates (status):** `ResourceBinding.status` (`phase`, `reason`, `message`, `outputs`, timestamps)
+- **Produces image outputs (when applicable):** Resolvers for `image|build|buildpack` types publish an OCI reference as `ResourceBinding.status.outputs.image`.
+- **Plan linkage:** The Orchestrator emits a `WorkloadPlan` projection that binds that output into the final container image, e.g.:
+  - `containers[].imageFrom: { bindingKey, outputKey: "image" }`
 - **Finalization:** On `ResourceBinding` deletion, deprovision external resources / Secrets, then remove finalizer
 
 ### Runtime Controller (PF)

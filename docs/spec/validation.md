@@ -22,7 +22,7 @@ Enforced at the CRD level using **OpenAPI schema validation** and **Common Expre
 **Container Requirements:**
 - `spec.containers[].image` must be present and non-empty
 - Container names must follow DNS subdomain naming conventions
-- At least one container must be defined when containers section is present
+- `containers` **must be present** and contain at least one container
 
 **Service Requirements:**
 - `spec.service.ports[].port` must be present when service is defined
@@ -36,21 +36,12 @@ Enforced at the CRD level using **OpenAPI schema validation** and **Common Expre
 
 #### OneOf Constraints
 
-**Source Specification:**
-```cel
-// Workload must specify exactly one source type
-has(spec.source.inline) ? !has(spec.source.configMapRef) : has(spec.source.configMapRef)
-```
-
 **File Sources (within containers):**
 ```cel
-// Files must specify exactly one source mechanism
-spec.containers.all(container, 
-  container.files.all(file,
-    (has(file.content) ? 1 : 0) + 
-    (has(file.source) ? 1 : 0) + 
-    (has(file.secretRef) ? 1 : 0) + 
-    (has(file.configMapRef) ? 1 : 0) == 1
+spec.containers.all(c,
+  !has(c.files) || c.files.all(f,
+    ([has(f.source), has(f.content), has(f.binaryContent)]
+      .where(x, x).size() == 1)
   )
 )
 ```
@@ -96,6 +87,7 @@ spec.containers.all(container,
 ### Spec-level invariants (enforced via CRD OpenAPI + CEL)
 
 - `containers` is a non-empty map; each container **requires** `image`.
+- `containers.*.image` must be either `"."` or a valid OCI image reference string. Placeholders are **not** supported in `image`.
 - If `service.ports` is present, each port **requires** `port` (integer).
 - If `resources` is present, each item **requires** `type`.
 - For `files[*]`, **exactly one** of `content | binaryContent | source` must be set.
@@ -110,16 +102,18 @@ spec.containers.all(container,
 ```cel
 size(self.containers) > 0
 ```
+- Image field (allow dot or OCI reference):
+```cel
+(self.image == ".") ||
+regex_match(
+  self.image,
+  "^[a-z0-9]+([._-][a-z0-9]+)*/?[a-z0-9._/-]+(:[A-Za-z0-9._-]+)?(@sha256:[A-Fa-f0-9]{64})?$"
+)
+```
 
 (Organization-specific policy — registry allow-lists, naming, resource limits — is out of scope here; use VAP/OPA/Kyverno.)
 
 ### Score Specification Compliance
-
-**Score Schema Validation:**
-```cel
-// Inline Score specifications must be valid YAML
-has(spec.source.inline) ? isValidYAML(spec.source.inline) : true
-```
 
 **Score Field Mapping:**
 - Validate that Score-specific fields (containers, service, resources) map correctly to CRD structure
@@ -173,13 +167,8 @@ metadata:
 ```
 
 **Runtime Class Restrictions:**
-```yaml
-# Example runtime policy
-spec:
-  runtimeClass: "kubernetes"       # Allowed for this team
-  runtimeClass: "ecs"              # Blocked for this environment
-  runtimeClass: "nomad"            # Not available in this cluster
-```
+
+> Runtime class selection is governed by `PlatformPolicy` and must not appear in `Workload.spec`.
 
 **Network and Security Policies:**
 ```yaml
