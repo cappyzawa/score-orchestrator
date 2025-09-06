@@ -9,7 +9,7 @@ It complements:
 
 ## Controller-centric responsibilities (watch vs. write)
 
-### Orchestrator (community)
+### Orchestrator (reference project, independent from Score Official)
 - **Watches:** `Workload`, `PlatformPolicy`, `ResourceBinding`, `WorkloadPlan`
 - **Creates/updates (spec):**
   - `ResourceBinding` — one per `Workload.spec.resources.<key>` (OwnerRef = Workload)

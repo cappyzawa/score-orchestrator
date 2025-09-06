@@ -1,6 +1,6 @@
 # Validation Strategy and Implementation
 
-This document outlines the validation approach for Score Orchestrator, defining clear boundaries between specification-level validation (community-provided) and organization-specific policy enforcement (platform-delegated).
+This document outlines the validation approach for Score Orchestrator, defining clear boundaries between specification-level validation (provided by this project, aligned with the Score Official spec) and organization-specific policy enforcement (platform-delegated).
 
 ## Validation Philosophy
 
@@ -13,7 +13,7 @@ This separation allows the community to maintain consistent specification compli
 
 ## Tier 1: Specification Validation (CRD OpenAPI + CEL)
 
-Enforced at the CRD level using **OpenAPI schema validation** and **Common Expression Language (CEL)** rules. These validations are **community-provided** and focus on specification-level invariants that must hold for any valid Score workload.
+Enforced at the CRD level using **OpenAPI schema validation** and **Common Expression Language (CEL)** rules. These validations are **provided by this project, aligned with the Score Official spec** and focus on specification-level invariants that must hold for any valid Score workload.
 
 ### Structural Requirements
 
@@ -269,7 +269,7 @@ spec:
 
 ## Validation Boundaries and Responsibilities
 
-### Community Responsibilities (CRD Level)
+### Project Responsibilities (CRD Level)
 
 **ENFORCE:**
 - Score specification compliance
@@ -307,7 +307,7 @@ spec:
 
 ### CRD Validation Testing
 
-Community-provided tests should cover:
+Tests provided by this project should cover:
 - Valid and invalid Score specifications
 - Required field validation
 - OneOf constraint enforcement

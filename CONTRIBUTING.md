@@ -1,5 +1,7 @@
 # Contributing to Score Orchestrator
 
+> **Non-affiliation:** This is an independent reference project and is not affiliated with the Score Official (Score Spec Maintainers).
+
 Score Orchestrator follows a **documentation-first development approach**. All significant changes begin with documentation and architectural decisions before implementation.
 
 ## Development Philosophy
@@ -68,15 +70,15 @@ Description:
 
 **For Major Changes (requiring ADR):**
 1. Create issue with initial proposal
-2. Community discussion in issue comments
+2. Project maintainer discussion in issue comments
 3. ADR creation following ADR template
-4. ADR review and approval process
+4. ADR review and approval process (maintainer-driven in this project; not an official Score process)
 5. Documentation updates based on approved ADR
 6. Implementation (future phases)
 
 **For Minor Changes:**
 1. Create issue with proposed changes
-2. Brief community feedback period (3-5 days)
+2. Brief project feedback period (3-5 days)
 3. Direct documentation/specification updates
 4. Pull request review and merge
 

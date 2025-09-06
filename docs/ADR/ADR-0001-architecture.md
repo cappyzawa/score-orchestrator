@@ -55,7 +55,7 @@ The challenge is designing an architecture that maintains the Score philosophy o
 - **No platform-specific terminology** in user-facing status
 
 ### 5. Validation Strategy Split
-- **CRD OpenAPI + CEL**: Specification-level invariants (community-provided)
+- **CRD OpenAPI + CEL**: Specification-level invariants (provided by this project, aligned with the Score Official spec)
 - **VAP/OPA/Kyverno**: Organization-specific policies (platform-delegated)
 
 ## Considered Alternatives
@@ -152,7 +152,7 @@ Using platform-neutral condition types and messages:
 ## Related Decisions
 
 This ADR establishes the foundation for:
-- ADR-0002: Community Scope - Orchestrator (expands community scope from CRDs-only to include reference Orchestrator)
+- ADR-0002: Project Scope - Orchestrator (expands project scope from CRDs-only to include reference Orchestrator)
 
 Future ADRs may cover:
 - CRD field specifications and validation rules

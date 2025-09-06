@@ -1,5 +1,7 @@
 # Score Orchestrator
 
+> **Non-affiliation:** This repository is an independent, community-led reference project and is **not** affiliated with the **Score Official** (the Score Spec Maintainers). It aims to be Score-compatible while remaining runtime-agnostic.
+
 Score Orchestrator provides a Kubernetes-based control-plane (via CRDs) and an orchestration system that keeps the user experience runtime-agnostic for managing Score workload specifications across diverse runtime platforms (Kubernetes, ECS, Nomad, etc.).
 
 ## Philosophy
@@ -45,7 +47,7 @@ Score Orchestrator implements a layered architecture with clear separation of co
 
 ### Core Components
 
-1. **Orchestrator Controller** (Community-provided)
+1. **Orchestrator Controller** (Reference implementation, independent from Score Official)
    - Interprets `Workload` and `PlatformPolicy` resources
    - Generates and monitors required `ResourceBinding` resources
    - Produces `WorkloadPlan` for runtime execution
@@ -96,7 +98,7 @@ All status messages use platform-neutral terminology - no Kubernetes-specific or
 
 ## Validation Strategy
 
-- **CRD OpenAPI + CEL**: Enforces specification-level invariants (community-provided)
+- **CRD OpenAPI + CEL**: Enforces specification-level invariants (provided by this project, aligned with the Score Official spec)
 - **Organization Policies**: Delegated to platform-specific tools (VAP/OPA/Kyverno)
 
 ## Non-goals (for clarity)
@@ -104,6 +106,11 @@ All status messages use platform-neutral terminology - no Kubernetes-specific or
 - Exposing runtime-specific details (e.g., Kubernetes Deployment/Pod names, ECS Task definitions) to users.
 - Shipping organization-specific admission policies. (Spec-level invariants are enforced via CRD OpenAPI + CEL; org-specific policy is left to VAP/OPA/Kyverno.)
 - Embedding the "plan" into `Workload.status`. The plan lives in the internal `WorkloadPlan` resource.
+
+## Terminology
+
+- **Score Official (Score Spec Maintainers)** — the maintainers of the Score spec (score-spec org).
+- **This project / independent reference project** — this repository; not affiliated with the Score Official.
 
 ## Getting Started
 
