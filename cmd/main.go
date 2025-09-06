@@ -178,9 +178,19 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Setup signal handler and context
+	ctx := ctrl.SetupSignalHandler()
+
+	// Setup indexers
+	if err := controller.SetupIndexers(ctx, mgr); err != nil {
+		setupLog.Error(err, "unable to set up indexers")
+		os.Exit(1)
+	}
+
 	if err := (&controller.WorkloadReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorderFor("workload-controller"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Workload")
 		os.Exit(1)
@@ -197,7 +207,7 @@ func main() {
 	}
 
 	setupLog.Info("starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
