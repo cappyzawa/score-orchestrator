@@ -7,6 +7,9 @@
 bin/*
 Dockerfile.cross
 
+# Built resolver binaries
+static-uri-resolver
+
 # Test binary, built with `go test -c`
 *.test
 

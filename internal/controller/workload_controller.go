@@ -36,12 +36,10 @@ import (
 	"github.com/cappyzawa/score-orchestrator/internal/status"
 )
 
-// WorkloadReconciler reconciles a Workload object
-type WorkloadReconciler struct {
-	client.Client
-	Scheme   *runtime.Scheme
-	Recorder record.EventRecorder
-}
+// WorkloadReconciler reconciles a Workload object.
+//
+// Design: The orchestrator implements the single-writer pattern for Workload status.
+// It creates and manages ResourceBindings and WorkloadPlans based on the Workload specification.
 
 // +kubebuilder:rbac:groups=score.dev,resources=workloads,verbs=get;list;watch
 // +kubebuilder:rbac:groups=score.dev,resources=workloads/status,verbs=get;update;patch
@@ -50,6 +48,11 @@ type WorkloadReconciler struct {
 // +kubebuilder:rbac:groups=score.dev,resources=resourcebindings/status,verbs=get;list;watch
 // +kubebuilder:rbac:groups=score.dev,resources=platformpolicies,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+type WorkloadReconciler struct {
+	client.Client
+	Scheme   *runtime.Scheme
+	Recorder record.EventRecorder
+}
 
 // Reconcile handles Workload reconciliation - the single writer of Workload.status
 func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {

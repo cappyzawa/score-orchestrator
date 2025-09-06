@@ -1,0 +1,29 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: static-uri-resolver-role
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
+  - score.dev
+  resources:
+  - resourcebindings
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - score.dev
+  resources:
+  - resourcebindings/status
+  verbs:
+  - get
+  - patch
+  - update
