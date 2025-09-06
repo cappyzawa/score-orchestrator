@@ -11,6 +11,8 @@ spec:
     kind: Workload
     listKind: WorkloadList
     plural: workloads
+    shortNames:
+    - wl
     singular: workload
   scope: Namespaced
   versions:
@@ -39,25 +41,261 @@ spec:
           spec:
             description: spec defines the desired state of Workload
             properties:
-              foo:
-                description: foo is an example field of Workload. Edit workload_types.go
-                  to remove/update
-                type: string
+              containers:
+                additionalProperties:
+                  description: ContainerSpec defines a container within the workload
+                  properties:
+                    args:
+                      description: Args for the container command
+                      items:
+                        type: string
+                      type: array
+                    command:
+                      description: Command to run in the container
+                      items:
+                        type: string
+                      type: array
+                    files:
+                      description: Files to mount in the container
+                      items:
+                        description: FileSpec defines a file to be mounted in the
+                          container
+                        properties:
+                          binaryContent:
+                            description: BinaryContent is base64-encoded binary file
+                              content
+                            type: string
+                          content:
+                            description: Content is the inline file content
+                            type: string
+                          mode:
+                            description: Mode is the file permission mode
+                            type: string
+                          source:
+                            description: Source references an external file source
+                            properties:
+                              uri:
+                                description: URI of the external file source
+                                minLength: 1
+                                type: string
+                            required:
+                            - uri
+                            type: object
+                          target:
+                            description: Target path where the file should be mounted
+                            minLength: 1
+                            type: string
+                        required:
+                        - target
+                        type: object
+                      maxItems: 20
+                      type: array
+                    image:
+                      description: Image is the container image reference. Use "."
+                        for build-from-source
+                      minLength: 1
+                      type: string
+                    livenessProbe:
+                      description: LivenessProbe defines the liveness probe for the
+                        container
+                      properties:
+                        exec:
+                          description: Exec specifies exec probe
+                          properties:
+                            command:
+                              description: Command to execute
+                              items:
+                                type: string
+                              minItems: 1
+                              type: array
+                          required:
+                          - command
+                          type: object
+                        httpGet:
+                          description: HTTPGet specifies HTTP probe
+                          properties:
+                            headers:
+                              additionalProperties:
+                                type: string
+                              description: HTTP headers to send with the request
+                              type: object
+                            path:
+                              description: Path to access on the HTTP server
+                              type: string
+                            port:
+                              description: Port to access on the container
+                              format: int32
+                              maximum: 65535
+                              minimum: 1
+                              type: integer
+                          required:
+                          - port
+                          type: object
+                      type: object
+                    readinessProbe:
+                      description: ReadinessProbe defines the readiness probe for
+                        the container
+                      properties:
+                        exec:
+                          description: Exec specifies exec probe
+                          properties:
+                            command:
+                              description: Command to execute
+                              items:
+                                type: string
+                              minItems: 1
+                              type: array
+                          required:
+                          - command
+                          type: object
+                        httpGet:
+                          description: HTTPGet specifies HTTP probe
+                          properties:
+                            headers:
+                              additionalProperties:
+                                type: string
+                              description: HTTP headers to send with the request
+                              type: object
+                            path:
+                              description: Path to access on the HTTP server
+                              type: string
+                            port:
+                              description: Port to access on the container
+                              format: int32
+                              maximum: 65535
+                              minimum: 1
+                              type: integer
+                          required:
+                          - port
+                          type: object
+                      type: object
+                    resources:
+                      description: Resources defines compute resource requirements
+                      properties:
+                        limits:
+                          additionalProperties:
+                            type: string
+                          description: Limits defines maximum resource usage
+                          type: object
+                        requests:
+                          additionalProperties:
+                            type: string
+                          description: Requests defines minimum required resources
+                          type: object
+                      type: object
+                    variables:
+                      additionalProperties:
+                        type: string
+                      description: Variables define environment variables for the
+                        container
+                      type: object
+                  required:
+                  - image
+                  type: object
+                description: Containers define the containers in the workload
+                maxProperties: 10
+                minProperties: 1
+                type: object
+              resources:
+                additionalProperties:
+                  description: ResourceSpec defines an external resource dependency
+                  properties:
+                    class:
+                      description: Class specifies the resource class or implementation
+                      type: string
+                    params:
+                      description: Params are resource-specific parameters
+                      x-kubernetes-preserve-unknown-fields: true
+                    type:
+                      description: Type of the resource (e.g., "postgresql", "redis",
+                        "s3")
+                      minLength: 1
+                      type: string
+                  required:
+                  - type
+                  type: object
+                description: Resources define external resource dependencies
+                type: object
+              service:
+                description: Service defines the service configuration
+                properties:
+                  ports:
+                    description: Ports define the service ports
+                    items:
+                      description: ServicePort defines a service port
+                      properties:
+                        port:
+                          description: Port is the service port number
+                          format: int32
+                          maximum: 65535
+                          minimum: 1
+                          type: integer
+                        protocol:
+                          default: TCP
+                          description: Protocol is the port protocol
+                          enum:
+                          - TCP
+                          - UDP
+                          type: string
+                        targetPort:
+                          description: TargetPort is the container port to forward
+                            to
+                          format: int32
+                          type: integer
+                      required:
+                      - port
+                      type: object
+                    type: array
+                type: object
+            required:
+            - containers
             type: object
           status:
             description: status defines the observed state of Workload
             properties:
+              bindings:
+                description: Bindings provide a summary of resource binding statuses
+                items:
+                  description: BindingSummary provides a summary of a resource binding
+                    status
+                  properties:
+                    key:
+                      description: Key identifies the resource binding
+                      minLength: 1
+                      type: string
+                    message:
+                      description: Message provides a human-readable description of
+                        the binding status
+                      type: string
+                    outputsAvailable:
+                      description: OutputsAvailable indicates whether the binding
+                        outputs are available
+                      type: boolean
+                    phase:
+                      description: Phase indicates the current phase of the binding
+                      enum:
+                      - Pending
+                      - Binding
+                      - Bound
+                      - Failed
+                      type: string
+                    reason:
+                      description: Reason provides a programmatic identifier for the
+                        binding status
+                      type: string
+                  required:
+                  - key
+                  - phase
+                  type: object
+                type: array
               conditions:
                 description: |-
-                  conditions represent the current state of the Workload resource.
-                  Each condition has a unique type and reflects the status of a specific aspect of the resource.
-
-                  Standard condition types include:
-                  - "Available": the resource is fully functional
-                  - "Progressing": the resource is being created or updated
-                  - "Degraded": the resource failed to reach or maintain its desired state
-
-                  The status of each condition is one of True, False, or Unknown.
+                  Conditions represent the current state of the Workload resource.
+                  Standard condition types:
+                  - "Ready": the workload is fully functional
+                  - "BindingsReady": all resource bindings are ready
+                  - "RuntimeReady": runtime environment is ready
+                  - "InputsValid": spec validation passed
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -116,6 +354,10 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              endpoint:
+                description: Endpoint is the primary URI for accessing the workload
+                format: uri
+                type: string
             type: object
         required:
         - spec

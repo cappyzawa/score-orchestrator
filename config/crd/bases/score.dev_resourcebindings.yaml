@@ -11,13 +11,17 @@ spec:
     kind: ResourceBinding
     listKind: ResourceBindingList
     plural: resourcebindings
+    shortNames:
+    - rb
     singular: resourcebinding
   scope: Namespaced
   versions:
   - name: v1b1
     schema:
       openAPIV3Schema:
-        description: ResourceBinding is the Schema for the resourcebindings API
+        description: |-
+          ResourceBinding represents a single resource dependency resolution contract.
+          Resolvers drive it to Bound and publish standardized outputs for consumption by runtimes.
         properties:
           apiVersion:
             description: |-
@@ -37,85 +41,137 @@ spec:
           metadata:
             type: object
           spec:
-            description: spec defines the desired state of ResourceBinding
+            description: ResourceBindingSpec declares the requested dependency and
+              parameters the resolver needs.
             properties:
-              foo:
-                description: foo is an example field of ResourceBinding. Edit resourcebinding_types.go
-                  to remove/update
+              class:
+                description: Class optionally selects a resolver subclass/plan (PF-specific).
                 type: string
+              deprovisionPolicy:
+                description: DeprovisionPolicy controls lifecycle of provisioned resources
+                  when unbound.
+                enum:
+                - Delete
+                - Retain
+                - Orphan
+                type: string
+              id:
+                description: ID optionally pins to an existing resource instance (resolver
+                  decides semantics).
+                type: string
+              key:
+                description: Key is the logical key under Workload.spec.resources
+                  (e.g., "db", "cache").
+                type: string
+              params:
+                description: Params are resolver-specific inputs (opaque to the orchestrator/runtime).
+                x-kubernetes-preserve-unknown-fields: true
+              type:
+                description: Type is an abstract resource type (e.g., "postgresql",
+                  "redis", "s3-bucket").
+                type: string
+              workloadRef:
+                description: WorkloadRef points back to the owning Workload.
+                properties:
+                  name:
+                    description: Name is the object name.
+                    type: string
+                  namespace:
+                    description: Namespace is the object namespace.
+                    type: string
+                required:
+                - name
+                - namespace
+                type: object
+            required:
+            - key
+            - type
+            - workloadRef
             type: object
           status:
-            description: status defines the observed state of ResourceBinding
+            description: ResourceBindingStatus is written by resolvers to report progress
+              and outputs.
             properties:
-              conditions:
-                description: |-
-                  conditions represent the current state of the ResourceBinding resource.
-                  Each condition has a unique type and reflects the status of a specific aspect of the resource.
-
-                  Standard condition types include:
-                  - "Available": the resource is fully functional
-                  - "Progressing": the resource is being created or updated
-                  - "Degraded": the resource failed to reach or maintain its desired state
-
-                  The status of each condition is one of True, False, or Unknown.
-                items:
-                  description: Condition contains details for one aspect of the current
-                    state of this API Resource.
-                  properties:
-                    lastTransitionTime:
-                      description: |-
-                        lastTransitionTime is the last time the condition transitioned from one status to another.
-                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
-                      format: date-time
-                      type: string
-                    message:
-                      description: |-
-                        message is a human readable message indicating details about the transition.
-                        This may be an empty string.
-                      maxLength: 32768
-                      type: string
-                    observedGeneration:
-                      description: |-
-                        observedGeneration represents the .metadata.generation that the condition was set based upon.
-                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
-                        with respect to the current state of the instance.
-                      format: int64
-                      minimum: 0
-                      type: integer
-                    reason:
-                      description: |-
-                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
-                        Producers of specific condition types may define expected values and meanings for this field,
-                        and whether the values are considered a guaranteed API.
-                        The value should be a CamelCase string.
-                        This field may not be empty.
-                      maxLength: 1024
-                      minLength: 1
-                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
-                      type: string
-                    status:
-                      description: status of the condition, one of True, False, Unknown.
-                      enum:
-                      - "True"
-                      - "False"
-                      - Unknown
-                      type: string
-                    type:
-                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
-                      maxLength: 316
-                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
-                      type: string
-                  required:
-                  - lastTransitionTime
-                  - message
-                  - reason
-                  - status
-                  - type
-                  type: object
-                type: array
-                x-kubernetes-list-map-keys:
-                - type
-                x-kubernetes-list-type: map
+              lastTransitionTime:
+                description: LastTransitionTime records when the phase last changed.
+                format: date-time
+                type: string
+              message:
+                description: Message is a short, single-sentence human message aligned
+                  with the reason.
+                type: string
+              observedGeneration:
+                description: ObservedGeneration is the last reconciled spec generation.
+                format: int64
+                type: integer
+              outputs:
+                description: Outputs are standardized resolver outputs for consumption
+                  by runtimes.
+                properties:
+                  cert:
+                    description: Cert provides certificate/key material or a reference
+                      to it.
+                    properties:
+                      data:
+                        additionalProperties:
+                          format: byte
+                          type: string
+                        description: Data allows inlined certificate/key material
+                          (base64-encoded in JSON).
+                        type: object
+                      secretName:
+                        description: SecretName optionally points to a Secret containing
+                          certificate/key data.
+                        type: string
+                    type: object
+                  configMapRef:
+                    description: ConfigMapRef points to a ConfigMap containing configuration
+                      data.
+                    properties:
+                      name:
+                        description: Name is the object name (namespace is implicit
+                          from the binding).
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  secretRef:
+                    description: SecretRef points to a Secret containing credentials
+                      or connection data.
+                    properties:
+                      name:
+                        description: Name is the object name (namespace is implicit
+                          from the binding).
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  uri:
+                    description: URI exposes a connection endpoint (e.g., jdbc:, redis:,
+                      https:).
+                    type: string
+                type: object
+                x-kubernetes-validations:
+                - message: at least one of secretRef|configMapRef|uri|cert must be
+                    set
+                  rule: has(self.secretRef) || has(self.configMapRef) || has(self.uri)
+                    || has(self.cert)
+              outputsAvailable:
+                description: OutputsAvailable indicates whether outputs are ready
+                  for consumption.
+                type: boolean
+              phase:
+                description: Phase summarizes resolver progress (Pending/Binding/Bound/Failed).
+                enum:
+                - Pending
+                - Binding
+                - Bound
+                - Failed
+                type: string
+              reason:
+                description: Reason is an abstract machine-readable reason; avoid
+                  runtime-specific nouns.
+                type: string
             type: object
         required:
         - spec
