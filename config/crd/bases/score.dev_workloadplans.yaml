@@ -11,13 +11,17 @@ spec:
     kind: WorkloadPlan
     listKind: WorkloadPlanList
     plural: workloadplans
+    shortNames:
+    - wplan
     singular: workloadplan
   scope: Namespaced
   versions:
   - name: v1b1
     schema:
       openAPIV3Schema:
-        description: WorkloadPlan is the Schema for the workloadplans API
+        description: |-
+          WorkloadPlan is an internal contract from Orchestrator to the Runtime controller.
+          It must not be user-visible via RBAC; status is intentionally omitted.
         properties:
           apiVersion:
             description: |-
@@ -37,90 +41,150 @@ spec:
           metadata:
             type: object
           spec:
-            description: spec defines the desired state of WorkloadPlan
+            description: |-
+              WorkloadPlanSpec contains the runtime class and the materialization plan.
+              All fields are internal; users should not rely on their concrete shape.
             properties:
-              foo:
-                description: foo is an example field of WorkloadPlan. Edit workloadplan_types.go
-                  to remove/update
-                type: string
-            type: object
-          status:
-            description: status defines the observed state of WorkloadPlan
-            properties:
-              conditions:
-                description: |-
-                  conditions represent the current state of the WorkloadPlan resource.
-                  Each condition has a unique type and reflects the status of a specific aspect of the resource.
-
-                  Standard condition types include:
-                  - "Available": the resource is fully functional
-                  - "Progressing": the resource is being created or updated
-                  - "Degraded": the resource failed to reach or maintain its desired state
-
-                  The status of each condition is one of True, False, or Unknown.
+              bindings:
+                description: Bindings declares resource requirements to be materialized
+                  by the runtime.
                 items:
-                  description: Condition contains details for one aspect of the current
-                    state of this API Resource.
+                  description: |-
+                    PlanBinding declares a binding requirement passed to the runtime controller.
+                    It mirrors the resolution keys (type/class/params) used by resolvers.
                   properties:
-                    lastTransitionTime:
-                      description: |-
-                        lastTransitionTime is the last time the condition transitioned from one status to another.
-                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
-                      format: date-time
+                    class:
+                      description: Class optionally refines the type (PF-specific
+                        resolver class).
                       type: string
-                    message:
-                      description: |-
-                        message is a human readable message indicating details about the transition.
-                        This may be an empty string.
-                      maxLength: 32768
+                    key:
+                      description: Key is the logical key (e.g., "db", "cache").
                       type: string
-                    observedGeneration:
-                      description: |-
-                        observedGeneration represents the .metadata.generation that the condition was set based upon.
-                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
-                        with respect to the current state of the instance.
-                      format: int64
-                      minimum: 0
-                      type: integer
-                    reason:
-                      description: |-
-                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
-                        Producers of specific condition types may define expected values and meanings for this field,
-                        and whether the values are considered a guaranteed API.
-                        The value should be a CamelCase string.
-                        This field may not be empty.
-                      maxLength: 1024
-                      minLength: 1
-                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
-                      type: string
-                    status:
-                      description: status of the condition, one of True, False, Unknown.
-                      enum:
-                      - "True"
-                      - "False"
-                      - Unknown
-                      type: string
+                    params:
+                      description: Params are opaque parameters used by the selected
+                        resolver/runtime.
+                      x-kubernetes-preserve-unknown-fields: true
                     type:
-                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
-                      maxLength: 316
-                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      description: Type is the abstract resource type (e.g., "postgresql").
                       type: string
                   required:
-                  - lastTransitionTime
-                  - message
-                  - reason
-                  - status
+                  - key
                   - type
                   type: object
                 type: array
-                x-kubernetes-list-map-keys:
-                - type
-                x-kubernetes-list-type: map
+              observedWorkloadGeneration:
+                description: ObservedWorkloadGeneration is the generation of the Workload
+                  used to compute this plan.
+                format: int64
+                type: integer
+              projection:
+                description: Projection defines how binding outputs are injected into
+                  the workload.
+                properties:
+                  env:
+                    items:
+                      description: EnvMapping projects a binding output into an environment
+                        variable.
+                      properties:
+                        from:
+                          description: From selects the binding output to inject.
+                          properties:
+                            bindingKey:
+                              description: BindingKey is the key under Workload.spec.resources
+                                (e.g., "db").
+                              type: string
+                            outputKey:
+                              description: OutputKey is the output field exported
+                                by the binding (e.g., "uri").
+                              type: string
+                          required:
+                          - bindingKey
+                          - outputKey
+                          type: object
+                        name:
+                          description: Name is the environment variable name.
+                          type: string
+                      required:
+                      - from
+                      - name
+                      type: object
+                    type: array
+                  files:
+                    items:
+                      description: FileProjection projects a binding output into a
+                        file path (abstract).
+                      properties:
+                        from:
+                          description: From selects the binding output to write to
+                            the path.
+                          properties:
+                            bindingKey:
+                              description: BindingKey is the key under Workload.spec.resources
+                                (e.g., "db").
+                              type: string
+                            outputKey:
+                              description: OutputKey is the output field exported
+                                by the binding (e.g., "uri").
+                              type: string
+                          required:
+                          - bindingKey
+                          - outputKey
+                          type: object
+                        path:
+                          description: Path is a file path inside the container filesystem.
+                          type: string
+                      type: object
+                    type: array
+                  volumes:
+                    items:
+                      description: VolumeProjection projects a binding output into
+                        a volume (abstract).
+                      properties:
+                        from:
+                          description: From selects the binding output to project
+                            into the volume.
+                          properties:
+                            bindingKey:
+                              description: BindingKey is the key under Workload.spec.resources
+                                (e.g., "db").
+                              type: string
+                            outputKey:
+                              description: OutputKey is the output field exported
+                                by the binding (e.g., "uri").
+                              type: string
+                          required:
+                          - bindingKey
+                          - outputKey
+                          type: object
+                        name:
+                          description: Name is a logical volume name.
+                          type: string
+                      type: object
+                    type: array
+                type: object
+              runtimeClass:
+                description: RuntimeClass is the selected runtime controller class.
+                type: string
+              workloadRef:
+                description: WorkloadRef identifies the source Workload of this plan.
+                properties:
+                  name:
+                    description: Name is the Workload name.
+                    type: string
+                  namespace:
+                    description: Namespace is the Workload namespace.
+                    type: string
+                required:
+                - name
+                - namespace
+                type: object
+            required:
+            - observedWorkloadGeneration
+            - runtimeClass
+            - workloadRef
             type: object
         required:
         - spec
         type: object
     served: true
     storage: true
-    subresources:
-      status: {}

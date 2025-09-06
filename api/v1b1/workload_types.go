@@ -17,48 +17,225 @@ limitations under the License.
 package v1b1
 
 import (
+	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
+// ContainerSpec defines a container within the workload
+type ContainerSpec struct {
+	// Image is the container image reference. Use "." for build-from-source
+	// +kubebuilder:validation:MinLength=1
+	Image string `json:"image"`
+
+	// Command to run in the container
+	// +optional
+	Command []string `json:"command,omitempty"`
+
+	// Args for the container command
+	// +optional
+	Args []string `json:"args,omitempty"`
+
+	// Variables define environment variables for the container
+	// +optional
+	Variables map[string]string `json:"variables,omitempty"`
+
+	// Files to mount in the container
+	// +optional
+	// +kubebuilder:validation:MaxItems=20
+	Files []FileSpec `json:"files,omitempty"`
+
+	// LivenessProbe defines the liveness probe for the container
+	// +optional
+	LivenessProbe *ProbeSpec `json:"livenessProbe,omitempty"`
+
+	// ReadinessProbe defines the readiness probe for the container
+	// +optional
+	ReadinessProbe *ProbeSpec `json:"readinessProbe,omitempty"`
+
+	// Resources defines compute resource requirements
+	// +optional
+	Resources *ResourceRequirements `json:"resources,omitempty"`
+}
+
+// FileSpec defines a file to be mounted in the container
+type FileSpec struct {
+	// Target path where the file should be mounted
+	// +kubebuilder:validation:MinLength=1
+	Target string `json:"target"`
+
+	// Mode is the file permission mode
+	// +optional
+	Mode *string `json:"mode,omitempty"`
+
+	// Source references an external file source
+	// +optional
+	Source *FileSourceSpec `json:"source,omitempty"`
+
+	// Content is the inline file content
+	// +optional
+	Content *string `json:"content,omitempty"`
+
+	// BinaryContent is base64-encoded binary file content
+	// +optional
+	BinaryContent *string `json:"binaryContent,omitempty"`
+}
+
+// FileSourceSpec defines an external file source
+type FileSourceSpec struct {
+	// URI of the external file source
+	// +kubebuilder:validation:MinLength=1
+	URI string `json:"uri"`
+}
+
+// ProbeSpec defines a health check probe
+type ProbeSpec struct {
+	// HTTPGet specifies HTTP probe
+	// +optional
+	HTTPGet *HTTPGetProbe `json:"httpGet,omitempty"`
+
+	// Exec specifies exec probe
+	// +optional
+	Exec *ExecProbe `json:"exec,omitempty"`
+}
+
+// HTTPGetProbe defines an HTTP health check
+type HTTPGetProbe struct {
+	// Path to access on the HTTP server
+	// +optional
+	Path string `json:"path,omitempty"`
+
+	// Port to access on the container
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
+	Port int32 `json:"port"`
+
+	// HTTP headers to send with the request
+	// +optional
+	Headers map[string]string `json:"headers,omitempty"`
+}
+
+// ExecProbe defines a command execution health check
+type ExecProbe struct {
+	// Command to execute
+	// +kubebuilder:validation:MinItems=1
+	Command []string `json:"command"`
+}
+
+// ResourceRequirements defines compute resource requirements
+type ResourceRequirements struct {
+	// Limits defines maximum resource usage
+	// +optional
+	Limits map[string]string `json:"limits,omitempty"`
+
+	// Requests defines minimum required resources
+	// +optional
+	Requests map[string]string `json:"requests,omitempty"`
+}
+
+// ServiceSpec defines the service configuration for the workload
+type ServiceSpec struct {
+	// Ports define the service ports
+	// +optional
+	Ports []ServicePort `json:"ports,omitempty"`
+}
+
+// ServicePort defines a service port
+type ServicePort struct {
+	// Port is the service port number
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
+	Port int32 `json:"port"`
+
+	// Protocol is the port protocol
+	// +kubebuilder:validation:Enum=TCP;UDP
+	// +kubebuilder:default="TCP"
+	// +optional
+	Protocol string `json:"protocol,omitempty"`
+
+	// TargetPort is the container port to forward to
+	// +optional
+	TargetPort *int32 `json:"targetPort,omitempty"`
+}
+
+// ResourceSpec defines an external resource dependency
+type ResourceSpec struct {
+	// Type of the resource (e.g., "postgresql", "redis", "s3")
+	// +kubebuilder:validation:MinLength=1
+	Type string `json:"type"`
+
+	// Class specifies the resource class or implementation
+	// +optional
+	Class *string `json:"class,omitempty"`
+
+	// Params are resource-specific parameters
+	// +optional
+	Params *apiextv1.JSON `json:"params,omitempty"`
+}
 
 // WorkloadSpec defines the desired state of Workload
 type WorkloadSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
+	// Containers define the containers in the workload
+	// +kubebuilder:validation:MinProperties=1
+	// +kubebuilder:validation:MaxProperties=10
+	Containers map[string]ContainerSpec `json:"containers"`
 
-	// foo is an example field of Workload. Edit workload_types.go to remove/update
+	// Service defines the service configuration
 	// +optional
-	Foo *string `json:"foo,omitempty"`
+	Service *ServiceSpec `json:"service,omitempty"`
+
+	// Resources define external resource dependencies
+	// +optional
+	Resources map[string]ResourceSpec `json:"resources,omitempty"`
+}
+
+// BindingSummary provides a summary of a resource binding status
+type BindingSummary struct {
+	// Key identifies the resource binding
+	// +kubebuilder:validation:MinLength=1
+	Key string `json:"key"`
+
+	// Phase indicates the current phase of the binding
+	// +kubebuilder:validation:Enum=Pending;Binding;Bound;Failed
+	Phase ResourceBindingPhase `json:"phase"`
+
+	// Reason provides a programmatic identifier for the binding status
+	// +optional
+	Reason string `json:"reason,omitempty"`
+
+	// Message provides a human-readable description of the binding status
+	// +optional
+	Message string `json:"message,omitempty"`
+
+	// OutputsAvailable indicates whether the binding outputs are available
+	// +optional
+	OutputsAvailable bool `json:"outputsAvailable,omitempty"`
 }
 
 // WorkloadStatus defines the observed state of Workload.
 type WorkloadStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// Endpoint is the primary URI for accessing the workload
+	// +kubebuilder:validation:Format=uri
+	// +optional
+	Endpoint *string `json:"endpoint,omitempty"`
 
-	// For Kubernetes API conventions, see:
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
-
-	// conditions represent the current state of the Workload resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
-	// The status of each condition is one of True, False, or Unknown.
+	// Conditions represent the current state of the Workload resource.
+	// Standard condition types:
+	// - "Ready": the workload is fully functional
+	// - "BindingsReady": all resource bindings are ready
+	// - "RuntimeReady": runtime environment is ready
+	// - "InputsValid": spec validation passed
 	// +listType=map
 	// +listMapKey=type
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// Bindings provide a summary of resource binding statuses
+	// +optional
+	Bindings []BindingSummary `json:"bindings,omitempty"`
 }
 
 // +kubebuilder:object:root=true
+// +kubebuilder:resource:shortName=wl
 // +kubebuilder:subresource:status
 
 // Workload is the Schema for the workloads API

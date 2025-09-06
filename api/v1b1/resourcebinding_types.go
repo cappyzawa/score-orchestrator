@@ -17,70 +17,120 @@ limitations under the License.
 package v1b1
 
 import (
+	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
-// ResourceBindingSpec defines the desired state of ResourceBinding
-type ResourceBindingSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
-
-	// foo is an example field of ResourceBinding. Edit resourcebinding_types.go to remove/update
-	// +optional
-	Foo *string `json:"foo,omitempty"`
-}
-
-// ResourceBindingStatus defines the observed state of ResourceBinding.
-type ResourceBindingStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// For Kubernetes API conventions, see:
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
-
-	// conditions represent the current state of the ResourceBinding resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
-	// The status of each condition is one of True, False, or Unknown.
-	// +listType=map
-	// +listMapKey=type
-	// +optional
-	Conditions []metav1.Condition `json:"conditions,omitempty"`
-}
-
 // +kubebuilder:object:root=true
+// +kubebuilder:resource:scope=Namespaced,shortName=rb
 // +kubebuilder:subresource:status
-
-// ResourceBinding is the Schema for the resourcebindings API
+// ResourceBinding represents a single resource dependency resolution contract.
+// Resolvers drive it to Bound and publish standardized outputs for consumption by runtimes.
 type ResourceBinding struct {
-	metav1.TypeMeta `json:",inline"`
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              ResourceBindingSpec   `json:"spec"`
+	Status            ResourceBindingStatus `json:"status,omitempty"`
+}
 
-	// metadata is a standard object metadata
-	// +optional
-	metav1.ObjectMeta `json:"metadata,omitempty,omitzero"`
+// NamespacedName identifies a namespaced Kubernetes object.
+type NamespacedName struct {
+	// Name is the object name.
+	Name string `json:"name"`
+	// Namespace is the object namespace.
+	Namespace string `json:"namespace"`
+}
 
-	// spec defines the desired state of ResourceBinding
-	// +required
-	Spec ResourceBindingSpec `json:"spec"`
+// DeprovisionPolicy controls behavior when a binding is no longer needed.
+// Delete removes provisioned resources; Retain keeps them; Orphan detaches ownership.
+// +kubebuilder:validation:Enum=Delete;Retain;Orphan
+type DeprovisionPolicy string
 
-	// status defines the observed state of ResourceBinding
-	// +optional
-	Status ResourceBindingStatus `json:"status,omitempty,omitzero"`
+const (
+	DeprovisionDelete DeprovisionPolicy = "Delete"
+	DeprovisionRetain DeprovisionPolicy = "Retain"
+	DeprovisionOrphan DeprovisionPolicy = "Orphan"
+)
+
+// ResourceBindingSpec declares the requested dependency and parameters the resolver needs.
+type ResourceBindingSpec struct {
+	// WorkloadRef points back to the owning Workload.
+	WorkloadRef NamespacedName `json:"workloadRef"`
+	// Key is the logical key under Workload.spec.resources (e.g., "db", "cache").
+	Key string `json:"key"`
+	// Type is an abstract resource type (e.g., "postgresql", "redis", "s3-bucket").
+	Type string `json:"type"`
+	// Class optionally selects a resolver subclass/plan (PF-specific).
+	Class *string `json:"class,omitempty"`
+	// ID optionally pins to an existing resource instance (resolver decides semantics).
+	ID *string `json:"id,omitempty"`
+	// Params are resolver-specific inputs (opaque to the orchestrator/runtime).
+	Params *apiextv1.JSON `json:"params,omitempty"`
+	// DeprovisionPolicy controls lifecycle of provisioned resources when unbound.
+	DeprovisionPolicy *DeprovisionPolicy `json:"deprovisionPolicy,omitempty"`
+}
+
+// ResourceBindingPhase indicates coarse-grained resolver progress.
+// Reasons/messages are abstract and must not leak runtime-specific nouns.
+type ResourceBindingPhase string
+
+const (
+	ResourceBindingPhasePending ResourceBindingPhase = "Pending"
+	ResourceBindingPhaseBinding ResourceBindingPhase = "Binding"
+	ResourceBindingPhaseBound   ResourceBindingPhase = "Bound"
+	ResourceBindingPhaseFailed  ResourceBindingPhase = "Failed"
+)
+
+// LocalObjectReference references a namespaced local object by name.
+type LocalObjectReference struct {
+	// Name is the object name (namespace is implicit from the binding).
+	Name string `json:"name"`
+}
+
+// CertificateOutput carries certificate material or a reference to where it is stored.
+type CertificateOutput struct {
+	// SecretName optionally points to a Secret containing certificate/key data.
+	SecretName *string `json:"secretName,omitempty"`
+	// Data allows inlined certificate/key material (base64-encoded in JSON).
+	Data map[string][]byte `json:"data,omitempty"`
+}
+
+// ResourceBindingOutputs groups standardized outputs published by the resolver.
+// At least one field must be set; platforms may define additional conventions by profile.
+// +kubebuilder:validation:XValidation:rule="has(self.secretRef) || has(self.configMapRef) || has(self.uri) || has(self.cert)",message="at least one of secretRef|configMapRef|uri|cert must be set"
+type ResourceBindingOutputs struct {
+	// SecretRef points to a Secret containing credentials or connection data.
+	SecretRef *LocalObjectReference `json:"secretRef,omitempty"`
+	// ConfigMapRef points to a ConfigMap containing configuration data.
+	ConfigMapRef *LocalObjectReference `json:"configMapRef,omitempty"`
+	// URI exposes a connection endpoint (e.g., jdbc:, redis:, https:).
+	URI *string `json:"uri,omitempty"`
+	// Cert provides certificate/key material or a reference to it.
+	Cert *CertificateOutput `json:"cert,omitempty"`
+}
+
+// ResourceBindingStatus is written by resolvers to report progress and outputs.
+type ResourceBindingStatus struct {
+	// Phase summarizes resolver progress (Pending/Binding/Bound/Failed).
+	// +kubebuilder:validation:Enum=Pending;Binding;Bound;Failed
+	Phase ResourceBindingPhase `json:"phase,omitempty"`
+	// Reason is an abstract machine-readable reason; avoid runtime-specific nouns.
+	Reason string `json:"reason,omitempty"`
+	// Message is a short, single-sentence human message aligned with the reason.
+	Message string `json:"message,omitempty"`
+	// Outputs are standardized resolver outputs for consumption by runtimes.
+	Outputs ResourceBindingOutputs `json:"outputs,omitempty"`
+	// OutputsAvailable indicates whether outputs are ready for consumption.
+	OutputsAvailable bool `json:"outputsAvailable,omitempty"`
+
+	// ObservedGeneration is the last reconciled spec generation.
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+	// LastTransitionTime records when the phase last changed.
+	LastTransitionTime *metav1.Time `json:"lastTransitionTime,omitempty"`
 }
 
 // +kubebuilder:object:root=true
-
-// ResourceBindingList contains a list of ResourceBinding
+// ResourceBindingList contains a list of ResourceBinding.
 type ResourceBindingList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
