@@ -166,7 +166,7 @@ metadata:
     environment: "production"            # Required environment label
 ```
 
-**Runtime Class Restrictions:**
+**Runtime class Restrictions:**
 
 > Runtime class selection is governed by `PlatformPolicy` and must not appear in `Workload.spec`.
 

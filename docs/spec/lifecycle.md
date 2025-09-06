@@ -118,10 +118,12 @@ The Orchestrator sets `BindingsReady=True` when:
 
 3. **Plan Validation**: Ensure plan completeness and consistency
 
-### WorkloadPlan Lifecycle
+### Runtime materialization lifecycle (internal)
+
+> These phases are tracked by **runtime-internal resources**; `WorkloadPlan` has **no** `.status`.
 
 ```
-WorkloadPlan Phase Transitions:
+Runtime (internal) Phase Transitions:
 Pending → Planning → Projected (success)
                    ↘ Failed (error)
 ```

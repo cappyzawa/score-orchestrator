@@ -27,8 +27,6 @@ See also: [`rbac.md`](rbac.md), [`control-plane.md`](control-plane.md), [`lifecy
 - **`WorkloadPlan`** — Orchestrator-to-Runtime projection plan (single writer: Orchestrator).  
   Same name/namespace as the target `Workload` (OwnerRef set). Hidden from users.
 
-**Single-writer principle:** Only the Orchestrator writes `Workload.status`. Runtime and Resolvers never update it.
-
 ---
 
 ## Workload (`score.dev/v1b1`) — Public (User-facing)
@@ -41,6 +39,24 @@ Runtime selection and platform details are **not** part of this spec.
 - Users define app intent: **`containers`** (required), optional **`service`**, optional **`resources`** (abstract dependencies).
 - No runtime-specific knobs. No indirection via ConfigMap templates, spec references, or custom includes.
 - Readiness and troubleshooting use **abstract** status only (`endpoint`, abstract `conditions`, binding summaries).
+
+#### Required/Optional Summary
+
+**Workload (spec)**
+
+| Field        | Req     | Notes                              |
+| ------------ | ------- | ---------------------------------- |
+| `containers` | **Yes** | `map<string, ContainerSpec>`       |
+| `service`    | No      | `ServiceSpec`                      |
+| `resources`  | No      | `map<string, ResourceRequest>`     |
+
+**Workload (status)**
+
+| Field        | Req     | Notes                              |
+| ------------ | ------- | ---------------------------------- |
+| `endpoint`   | No      | canonical URL if available (format: uri) |
+| `conditions` | **Yes** | Kubernetes-style condition array   |
+| `bindings`   | No      | summary per dependency             |
 
 ### Spec — Top-level fields (and only these)
 - **`containers`** (required): `map<string, ContainerSpec>`
@@ -82,7 +98,7 @@ Runtime selection and platform details are **not** part of this spec.
   Use upstream tooling (Helm/Kustomize) before submitting the CR.
 
 ### Status (user-facing, minimal, abstract)
-- **`endpoint: string|null`** — canonical URL if available; else `null`
+- **`endpoint: string|null`** — canonical URL if available; else `null` (format: uri)
 - **`conditions[]`** — Kubernetes-style items with abstract reasons only  
   - **Types:** `Ready`, `BindingsReady`, `RuntimeReady`, `InputsValid`
   - **Reasons (fixed, abstract):**  
@@ -130,6 +146,30 @@ Resolvers watch this resource, provision/bind concrete services, and publish out
 - Created/updated (spec) by the **Orchestrator**; OwnerRef points to the Workload.
 - **Hidden from users** via RBAC. Resolvers and runtime may read it.
 
+#### Required/Optional Summary
+
+**ResourceBinding (spec)**
+
+| Field                            | Req     | Notes                               |
+| -------------------------------- | ------- | ----------------------------------- |
+| `workloadRef.name` / `namespace` | **Yes** | points to owning Workload           |
+| `key`                            | **Yes** | key under `Workload.spec.resources` |
+| `type`                           | **Yes** | abstract type (e.g., `postgresql`)  |
+| `class`                          | No      | resolver subclass                   |
+| `id`                             | No      | existing instance pin               |
+| `params`                         | No      | `JSON` (opaque)                     |
+| `deprovisionPolicy`              | No      | Enum (Delete/Retain/Orphan)         |
+
+**ResourceBinding (status)**
+
+| Field                                       | Req     | Notes                                     |
+| ------------------------------------------- | ------- | ----------------------------------------- |
+| `phase`                                     | **Yes** | `Pending \| Binding \| Bound \| Failed`   |
+| `reason` / `message`                        | No      | abstract                                  |
+| `outputs`                                   | No*     | see CEL: at least one subfield if present |
+| `outputsAvailable`                          | **Yes** | boolean gate for consumers                |
+| `observedGeneration` / `lastTransitionTime` | No      | bookkeeping                               |
+
 ### Spec (conceptual)
 - **`workloadRef`**: name/namespace of the owning Workload
 - **`key`**: the resource key from `Workload.spec.resources`
@@ -137,17 +177,32 @@ Resolvers watch this resource, provision/bind concrete services, and publish out
 - `class` (optional): tier/size
 - `id` (optional): bind to an existing instance
 - `params` (optional): free-form resolver config
-- `deprovisionPolicy` (optional): `Delete | Retain | Orphan`
+- `deprovisionPolicy` (optional): Enum { **Delete**, **Retain**, **Orphan** }.
+  Defines how provisioned resources are handled when the binding is removed.
 
 ### Status (written by Resolvers)
 - **`phase`**: `Pending → Binding → (Bound | Failed)` (may re-enter on reconcile)
 - **`reason` / `message`**: short, neutral text (no runtime-specific nouns)
-- **`outputs`**: at least one of:
-  - `secretRef: { name }` (recommended for credentials)
-  - `configMapRef: { name }`
-  - `uri: string`
-  - `cert: { secretName | data }`
-- `outputsAvailable: bool` (convenience)
+- **`outputs` (standardized)**: Shape:
+  ```yaml
+  outputs:
+    secretRef: { name: string }                # optional
+    configMapRef: { name: string }             # optional
+    uri: string                                # optional (e.g., jdbc:, redis:, https:)
+    image: string                              # optional (OCI image reference)
+    cert:                                      # optional
+      secretName: string?                      # reference to Secret containing material
+      data: { <filename>: base64-bytes }?      # inlined certificate/key material
+  ```
+  
+  **Constraint (normative):** at least one of the above must be set.
+  
+  * CEL (normative example used by the CRD):
+    ```
+    has(self.secretRef) || has(self.configMapRef) || has(self.uri) || has(self.image) || has(self.cert)
+    ```
+- `outputsAvailable: bool` MUST be `true` iff the resolver has published a valid `outputs`
+  object (i.e., the CEL condition evaluates to true).
 - `observedGeneration`, `lastTransitionTime`
 
 > The Orchestrator aggregates Binding status into `Workload.status.bindings[]` and `BindingsReady`.
@@ -160,15 +215,30 @@ Resolvers watch this resource, provision/bind concrete services, and publish out
 A runtime-agnostic **projection plan** that the Runtime consumes to materialize the application.  
 It expresses **how to use** dependency outputs, not the outputs themselves.
 
+For example, `imageFrom: { bindingKey, outputKey }` may be used to bind an `outputs.image` into the final container image.
+
 ### Ownership & Visibility
 - Same name/namespace as the target `Workload`; OwnerRef set.
-- **Single writer:** Orchestrator. Runtime is read-only. Hidden from users.
+- **Single-writer:** Orchestrator. Runtime is read-only. Hidden from users.
+
+#### Required/Optional Summary
+
+**WorkloadPlan (spec)**
+
+| Field                          | Req     | Notes                                |
+| ------------------------------ | ------- | ------------------------------------ |
+| `workloadRef.name` / `namespace` | **Yes** | reference to target Workload         |
+| `observedWorkloadGeneration`   | **Yes** | tracks Workload changes              |
+| `runtimeClass`                 | **Yes** | abstract runtime (e.g., kubernetes) |
+| `projection`                   | No      | env/volume mapping rules             |
+| `bindings`                     | No      | desired dependency summaries         |
 
 ### Spec (conceptual)
 - **`workloadRef.name`** and **`observedWorkloadGeneration`**
 - **`runtimeClass`**: abstract runtime class (e.g., `kubernetes`, `ecs`, `nomad`)
 - **`projection`**: minimal rules, e.g.:
   - `env[]: { name, from: { bindingKey, outputKey } }`
+  - `imageFrom: { bindingKey, outputKey }`
   - (optionally) `volumes[]` / `files[]` projection in the same spirit
 - **`bindings[]`**: desired summaries of each dependency (`key`, `type`, optional `class/params`)
 
@@ -203,13 +273,31 @@ It expresses **how to use** dependency outputs, not the outputs themselves.
 
 ---
 
+## Types & Conventions
+
+### Opaque JSON fields
+
+Fields that intentionally carry arbitrary JSON **MUST** use the Kubernetes type
+`apiextensions.k8s.io/v1.JSON` in the Go schema (and equivalent in OpenAPI).
+Do not use `interface{}` / `any` / `runtime.RawExtension` for these fields.
+
+Affected fields:
+- `PlatformPolicy.spec.resolverRouting[*].params`
+- `ResourceBinding.spec.params`
+- `WorkloadPlan.spec.bindings[].params`
+
+---
+
 ## Conventions
 
 - **Status subresource:** CRDs expose `status` as a subresource.  
-- **Single-writer rules:**  
-  - `Workload.status` — Orchestrator only  
-  - `ResourceBinding.status` — Resolvers only  
-  - `WorkloadPlan.spec` — Orchestrator only
+- **Status authorship (Single-writer principle):**  
+  - `Workload.status`: written **only** by the Orchestrator.
+  - `ResourceBinding.status`: written **only** by Resolver implementations.
+  - `WorkloadPlan`: no `.status`. Runtime controllers **must not** write to `Workload.status`;
+    they publish detailed diagnostics to their **own** internal resources.
+  
+  See `docs/spec/rbac.md` for recommended RBAC roles.
 - **Owner references:** `ResourceBinding` and `WorkloadPlan` carry OwnerRef to their `Workload` for cascading GC.
 - **No runtime nouns in user-facing docs:** Never expose Deployment/Pod/ECS Task names to users.
 
