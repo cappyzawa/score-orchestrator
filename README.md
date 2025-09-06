@@ -1,119 +1,33 @@
-# Score Orchestrator
+# Score Orchestrator (independent reference project)
 
-> **Non-affiliation:** This repository is an independent, community-led reference project and is **not** affiliated with the **Score Official** (the Score Spec Maintainers). It aims to be Score-compatible while remaining runtime-agnostic.
+> **Non-affiliation:** This repository is an independent reference project and is **not** affiliated with the **Score Official** (Score Spec Maintainers). It aims to be Score-compatible while keeping the user experience runtime-agnostic.
 
-Score Orchestrator provides a Kubernetes-based control-plane (via CRDs) and an orchestration system that keeps the user experience runtime-agnostic for managing Score workload specifications across diverse runtime platforms (Kubernetes, ECS, Nomad, etc.).
+## Why this exists
+Score defines a portable way to describe applications. This project provides a small, opinionated control plane so that **users author only a `Workload`**, while platform/runtime details and dependencies are handled behind the scenes.
 
-## Philosophy
+## What this project is
+- A reference **orchestrator** built around Kubernetes CRDs (group/version: `score.dev/v1b1`)
+- Public API surface: **`Workload`** only
+- Internal contracts for platform use: `ResourceBinding`, `WorkloadPlan`; PF-facing `PlatformPolicy`
+- Status is abstract and user-centric (a single `endpoint`, abstract `conditions`, binding summaries)
+- Validation boundary: **CRD OpenAPI + CEL** for spec invariants; org policy via **VAP/OPA/Kyverno**
 
-**Users only write `Workload`**. The underlying execution platform, resource resolution, and infrastructure details are completely abstracted away and managed by the Platform (PF) side.
+## Design tenets (at a glance)
+- **Runtime-agnostic UX** — no runtime-specific nouns in user-visible docs
+- **Single-writer status** — only the orchestrator updates `Workload.status`
+- **Separation of concerns** — plan vs. bindings; users vs. platform
+- **RBAC by default** — users see only `Workload`
 
-This approach enables:
-- **Platform Independence**: Write once, run anywhere (Kubernetes, ECS, Nomad, etc.)
-- **Developer Focus**: Focus on application requirements, not infrastructure details
-- **Platform Control**: Platforms maintain full control over resource provisioning and policies
+## Documentation
+- Spec & APIs: [`docs/spec/crds.md`](docs/spec/crds.md)  
+- Controllers & responsibilities: [`docs/spec/control-plane.md`](docs/spec/control-plane.md)  
+- Lifecycle & state: [`docs/spec/lifecycle.md`](docs/spec/lifecycle.md)  
+- Validation strategy (OpenAPI + CEL): [`docs/spec/validation.md`](docs/spec/validation.md)  
+- RBAC recommendations: [`docs/spec/rbac.md`](docs/spec/rbac.md)  
+- ADR index: [`docs/ADR/`](docs/ADR/)
 
-## Visibility & RBAC (Public vs Internal)
+## Discussion & background
+- Score spec discussion: https://github.com/score-spec/spec/discussions/157
 
-**API Group/Version:** `score.dev/v1b1`
-
-**Public resources**
-- `Workload` — the only user-facing CR.
-
-**PF-facing (hidden from users via RBAC)**
-- `PlatformPolicy` — cluster-scoped, managed by platform operators.
-
-**Internal resources (not user-visible)**
-- `ResourceBinding` — contract with resolvers for dependency provisioning.
-- `WorkloadPlan` — contract from Orchestrator to Runtime.
-
-Only the Orchestrator writes `Workload.status`. Runtimes and Resolvers update their own resources and the Orchestrator aggregates.
-
-## User-facing Status Contract
-
-Users should rely on `Workload.status` only:
-
-- `endpoint: string|null` — the canonical URL if available (at most one; `null` if unknown).
-- `conditions[]` — Kubernetes-style entries with **abstract reasons only** (no runtime-specific nouns).
-  - Types: `Ready`, `BindingsReady`, `RuntimeReady`, `InputsValid`
-  - Reasons (fixed vocabulary): `Succeeded`, `SpecInvalid`, `PolicyViolation`, `BindingPending`, `BindingFailed`, `ProjectionError`, `RuntimeSelecting`, `RuntimeProvisioning`, `RuntimeDegraded`, `QuotaExceeded`, `PermissionDenied`, `NetworkUnavailable`
-- `bindings[]` — compact summaries per dependency: `key`, `phase (Pending|Binding|Bound|Failed)`, `reason`, `message`, `outputsAvailable: bool`.
-
-**Readiness rule:** `InputsValid=True AND BindingsReady=True AND RuntimeReady=True`.
-
-## Architecture Overview
-
-Score Orchestrator implements a layered architecture with clear separation of concerns:
-
-### Core Components
-
-1. **Orchestrator Controller** (Reference implementation, independent from Score Official)
-   - Interprets `Workload` and `PlatformPolicy` resources
-   - Generates and monitors required `ResourceBinding` resources
-   - Produces `WorkloadPlan` for runtime execution
-   - **Single writer** of `Workload.status` providing unified state aggregation
-
-2. **Runtime Controller** (Platform-provided)
-   - Consumes `WorkloadPlan` and `ResourceBinding.status.outputs`
-   - Materializes workloads on concrete execution platforms
-   - Manages platform-specific internal objects (invisible to users)
-
-3. **Resolver Controllers** (Platform/Vendor-provided)
-   - Bind `ResourceBinding` resources to `Bound` state
-   - Provide standardized `outputs` for consumption
-
-### Custom Resource Definitions
-
-#### Public APIs (User-facing)
-- **`Workload`** (`score.dev/v1b1`): The only resource users interact with
-
-#### PF-facing (hidden from users via RBAC)
-- **`PlatformPolicy`** (`score.dev/v1b1`): Platform-applied governance and defaults
-
-#### Internal APIs (Platform-facing)
-- **`ResourceBinding`** (`score.dev/v1b1`): Dependency resolution contracts
-- **`WorkloadPlan`** (`score.dev/v1b1`): Orchestrator-to-Runtime execution plans
-
-## High-Level Flow
-
-```
-1. User applies Workload
-2. Orchestrator applies matching PlatformPolicy
-3. Orchestrator generates ResourceBinding resources
-4. Resolver Controllers bind dependencies and provide outputs
-5. Orchestrator generates WorkloadPlan with projection rules
-6. Runtime Controller materializes workload on target platform
-7. Orchestrator aggregates status and exposes endpoint in Workload.status
-```
-
-## User Interface
-
-Users interact exclusively with `Workload` resources. The status provides minimal, abstracted information:
-
-- **`status.endpoint`**: Single exposed service endpoint (URI format)
-- **`status.conditions`**: Standard Kubernetes conditions with abstract reasoning
-- **`status.bindings`**: Summary of resource dependency states
-
-All status messages use platform-neutral terminology - no Kubernetes-specific or platform-specific details are exposed.
-
-## Validation Strategy
-
-- **CRD OpenAPI + CEL**: Enforces specification-level invariants (provided by this project, aligned with the Score Official spec)
-- **Organization Policies**: Delegated to platform-specific tools (VAP/OPA/Kyverno)
-
-## Non-goals (for clarity)
-
-- Exposing runtime-specific details (e.g., Kubernetes Deployment/Pod names, ECS Task definitions) to users.
-- Shipping organization-specific admission policies. (Spec-level invariants are enforced via CRD OpenAPI + CEL; org-specific policy is left to VAP/OPA/Kyverno.)
-- Embedding the "plan" into `Workload.status`. The plan lives in the internal `WorkloadPlan` resource.
-
-## Terminology
-
-- **Score Official (Score Spec Maintainers)** — the maintainers of the Score spec (score-spec org).
-- **This project / independent reference project** — this repository; not affiliated with the Score Official.
-
-## Getting Started
-
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for development guidelines and [docs/](./docs/) for detailed specifications.
-
-See also: [`docs/spec/crds.md`](docs/spec/crds.md), [`docs/spec/validation.md`](docs/spec/validation.md), [`docs/spec/lifecycle.md`](docs/spec/lifecycle.md), [`docs/spec/rbac.md`](docs/spec/rbac.md).
+## Contributing
+See [`CONTRIBUTING.md`](CONTRIBUTING.md). PRs that improve docs, tests, and conformance are welcome.
