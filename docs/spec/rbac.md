@@ -6,7 +6,7 @@ This document defines the access control model for Score Orchestrator, establish
 
 Score Orchestrator implements **layered access control** with strict separation of concerns:
 
-- **Users** interact only with public APIs (`Workload`, `PlatformPolicy`)
+- **Users** interact only with the public API (`Workload`)
 - **Controllers** have minimal required permissions for their specific responsibilities  
 - **Internal APIs** remain invisible to users while being accessible to platform components
 - **Single-writer principle** prevents status corruption through exclusive write permissions
@@ -27,7 +27,6 @@ Score Orchestrator implements **layered access control** with strict separation 
 **Permitted Actions:**
 - Create, read, update, delete `Workload` resources in authorized namespaces
 - Read `Workload.status` for monitoring and debugging
-- Read `PlatformPolicy` resources to understand applied constraints
 - Read `Workload` events for troubleshooting
 
 **Prohibited Actions:**
@@ -49,10 +48,6 @@ rules:
   verbs: ["get", "list", "create", "update", "patch", "delete"]
 - apiGroups: ["score.dev"]  
   resources: ["workloads/status"]
-  verbs: ["get", "list"]
-# Policy visibility
-- apiGroups: ["score.dev"]
-  resources: ["platformpolicies"]
   verbs: ["get", "list"]
 # Event access for debugging
 - apiGroups: [""]
@@ -147,7 +142,7 @@ Runtime Controllers consume execution plans and materialize workloads on target 
 **Core Responsibilities:**
 - Read `WorkloadPlan` resources for execution instructions
 - Read `ResourceBinding.status.outputs` for dependency information
-- Write `WorkloadPlan.status` to report materialization progress
+- Report materialization progress via **runtime-internal** resources (not `WorkloadPlan.status`)
 - Manage platform-specific resources (Kubernetes Deployments, ECS Tasks, etc.)
 
 **Required ClusterRole:**
@@ -157,13 +152,13 @@ kind: ClusterRole
 metadata:
   name: score-runtime-controller
 rules:
-# Plan consumption
+# Plan consumption (read-only)
 - apiGroups: ["score.dev"]
   resources: ["workloadplans"]
   verbs: ["get", "list", "watch"]
 - apiGroups: ["score.dev"]
   resources: ["workloadplans/status"]
-  verbs: ["get", "list", "update", "patch"]
+  verbs: ["get", "list"]
 # Dependency output consumption
 - apiGroups: ["score.dev"]
   resources: ["resourcebindings"]
@@ -188,7 +183,7 @@ rules:
 ```
 
 **Security Constraints:**
-- **Cannot** access `Workload` resources directly (prevents bypassing orchestration)
+- May **read** `Workload` metadata if needed (read-only); must not bypass orchestration
 - **Cannot** modify `ResourceBinding` resources (prevents binding manipulation)
 - **Must** validate OwnerReference on `WorkloadPlan` before processing
 - **Should** implement resource quotas and limits for platform resources

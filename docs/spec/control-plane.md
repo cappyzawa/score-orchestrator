@@ -49,6 +49,17 @@ It complements:
   Each `ResourceBinding` is created for that key; its `status.outputs` provide the concrete values.
 - **Separation of concerns:** Plan carries **how to use** (projection rules), Binding carries **what to provide** (outputs).
 
+**Example: Image resolution flow:**
+```yaml
+# ResourceBinding.status.outputs (by Resolver)
+outputs:
+  image: "registry.example.com/myapp:v1.2.3"
+
+# WorkloadPlan.spec.projection (by Orchestrator)  
+projection:
+  imageFrom: { bindingKey: "build-tool", outputKey: "image" }
+```
+
 ## Error mapping (abstract reasons for `Workload.status`)
 - Binding in progress/failure → `BindingPending` / `BindingFailed`
 - Outputs missing/mismatched vs plan → `ProjectionError`
