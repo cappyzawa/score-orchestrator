@@ -5,9 +5,27 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
   - score.dev
   resources:
+  - platformpolicies
+  - resourcebindings/status
   - workloads
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - score.dev
+  resources:
+  - resourcebindings
+  - workloadplans
   verbs:
   - create
   - delete
