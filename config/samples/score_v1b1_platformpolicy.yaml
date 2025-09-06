@@ -1,0 +1,9 @@
+apiVersion: score.dev/v1b1
+kind: PlatformPolicy
+metadata:
+  labels:
+    app.kubernetes.io/name: kbinit
+    app.kubernetes.io/managed-by: kustomize
+  name: platformpolicy-sample
+spec:
+  # TODO(user): Add fields here

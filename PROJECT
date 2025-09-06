@@ -8,4 +8,38 @@ layout:
 - go.kubebuilder.io/v4
 projectName: kbinit
 repo: github.com/cappyzawa/score-orchestrator
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: dev
+  group: score
+  kind: Workload
+  path: github.com/cappyzawa/score-orchestrator/api/v1b1
+  version: v1b1
+- api:
+    crdVersion: v1
+    namespaced: true
+  domain: dev
+  group: score
+  kind: PlatformPolicy
+  path: github.com/cappyzawa/score-orchestrator/api/v1b1
+  version: v1b1
+- api:
+    crdVersion: v1
+    namespaced: true
+  domain: dev
+  group: score
+  kind: ResourceBinding
+  path: github.com/cappyzawa/score-orchestrator/api/v1b1
+  version: v1b1
+- api:
+    crdVersion: v1
+    namespaced: true
+  domain: dev
+  group: score
+  kind: WorkloadPlan
+  path: github.com/cappyzawa/score-orchestrator/api/v1b1
+  version: v1b1
 version: "3"

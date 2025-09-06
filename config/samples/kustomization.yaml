@@ -1,0 +1,7 @@
+## Append samples of your project ##
+resources:
+- score_v1b1_workload.yaml
+- score_v1b1_platformpolicy.yaml
+- score_v1b1_resourcebinding.yaml
+- score_v1b1_workloadplan.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples
