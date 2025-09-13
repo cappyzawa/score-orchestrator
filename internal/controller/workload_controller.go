@@ -33,6 +33,7 @@ import (
 	"github.com/cappyzawa/score-orchestrator/internal/config"
 	"github.com/cappyzawa/score-orchestrator/internal/meta"
 	"github.com/cappyzawa/score-orchestrator/internal/reconcile"
+	"github.com/cappyzawa/score-orchestrator/internal/selection"
 	"github.com/cappyzawa/score-orchestrator/internal/status"
 )
 
@@ -173,7 +174,7 @@ func (r *WorkloadReconciler) validateInputsAndPolicy(_ context.Context, workload
 }
 
 // determineRuntimeClass determines the runtime class for the workload
-// ADR-0003: Runtime selection is now based on Orchestrator Config profiles
+// ADR-0003: Runtime selection is now based on deterministic profile selection pipeline
 func (r *WorkloadReconciler) determineRuntimeClass(ctx context.Context, workload *scorev1b1.Workload) string {
 	log := ctrl.LoggerFrom(ctx)
 
@@ -184,48 +185,20 @@ func (r *WorkloadReconciler) determineRuntimeClass(ctx context.Context, workload
 		return meta.RuntimeClassKubernetes
 	}
 
-	// Determine profile name (from workload.spec.profile or defaults.profile)
-	profileName := ""
-	if workload.Spec.Profile != nil {
-		profileName = *workload.Spec.Profile
-	} else if orchestratorConfig.Spec.Defaults.Profile != "" {
-		profileName = orchestratorConfig.Spec.Defaults.Profile
-	}
+	// Create ProfileSelector
+	selector := selection.NewProfileSelector(orchestratorConfig, r.Client)
 
-	if profileName == "" {
-		log.Info("No profile specified and no default profile configured, using default runtime")
+	// Select backend using deterministic pipeline
+	selectedBackend, err := selector.SelectBackend(ctx, workload)
+	if err != nil {
+		log.Error(err, "Failed to select backend, using default runtime")
 		return meta.RuntimeClassKubernetes
 	}
 
-	// Find the profile
-	var selectedProfile *scorev1b1.ProfileSpec
-	for _, profile := range orchestratorConfig.Spec.Profiles {
-		if profile.Name == profileName {
-			selectedProfile = &profile
-			break
-		}
-	}
+	log.Info("Selected backend for workload",
+		"backend", selectedBackend.BackendID,
+		"runtime", selectedBackend.RuntimeClass)
 
-	if selectedProfile == nil {
-		log.Error(nil, "Specified profile not found in config", "profile", profileName)
-		return meta.RuntimeClassKubernetes
-	}
-
-	// Select backend from profile (use highest priority backend)
-	if len(selectedProfile.Backends) == 0 {
-		log.Error(nil, "Profile has no backends configured", "profile", profileName)
-		return meta.RuntimeClassKubernetes
-	}
-
-	// Sort backends by priority (highest first) and select the first one
-	selectedBackend := selectedProfile.Backends[0]
-	for _, backend := range selectedProfile.Backends {
-		if backend.Priority > selectedBackend.Priority {
-			selectedBackend = backend
-		}
-	}
-
-	log.Info("Selected backend for workload", "profile", profileName, "backend", selectedBackend.BackendId, "runtime", selectedBackend.RuntimeClass)
 	return selectedBackend.RuntimeClass
 }
 

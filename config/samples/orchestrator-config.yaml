@@ -2,6 +2,8 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: score-system
+  labels:
+    environment: development
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -18,44 +20,77 @@ data:
     spec:
       profiles:
       - name: web-service
-        description: "Web service profile"
+        description: "HTTP-based web applications"
         backends:
-        - backendId: k8s-web-1
+        - backendId: k8s-web-dev
           runtimeClass: kubernetes
           template:
             kind: manifests
             ref: "registry.example.com/templates/web@sha256:abc123"
             values:
-              replicas: 3
-          priority: 100
+              replicas: 1
+              resources:
+                requests:
+                  cpu: "100m"
+                  memory: "128Mi"
+          priority: 50
           version: "1.0.0"
-      - name: database-service
-        description: "Database service profile"
-        backends:
-        - backendId: k8s-db-1
+          constraints:
+            selectors:
+            - matchLabels:
+                environment: development
+            features: ["http-ingress"]
+        - backendId: k8s-web-prod
           runtimeClass: kubernetes
           template:
             kind: manifests
-            ref: "registry.example.com/templates/db@sha256:def456"
+            ref: "registry.example.com/templates/web-prod@sha256:def456"
             values:
-              storage: "10Gi"
-          priority: 90
+              replicas: 3
+              resources:
+                requests:
+                  cpu: "200m"
+                  memory: "256Mi"
+          priority: 100
+          version: "1.2.0"
+          constraints:
+            selectors:
+            - matchLabels:
+                environment: production
+            features: ["http-ingress", "monitoring"]
+      - name: batch-job
+        description: "Batch processing workloads"
+        backends:
+        - backendId: k8s-batch-standard
+          runtimeClass: kubernetes
+          template:
+            kind: manifests
+            ref: "registry.example.com/templates/batch@sha256:ghi789"
+            values:
+              restartPolicy: OnFailure
+          priority: 100
           version: "1.0.0"
       provisioners:
       - type: postgres
         provisioner: postgres-operator
+        defaults:
+          class: small
         classes:
         - name: small
-          description: "Small database"
+          description: "Development database"
           parameters:
             cpu: "500m"
             memory: "1Gi"
             storage: "10Gi"
         - name: large
-          description: "Large database"
+          description: "Production database"
           parameters:
             cpu: "2000m"
             memory: "4Gi"
             storage: "100Gi"
       defaults:
         profile: web-service
+        selectors:
+        - matchLabels:
+            workload-type: batch
+          profile: batch-job
