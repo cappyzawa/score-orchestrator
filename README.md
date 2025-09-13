@@ -19,11 +19,12 @@ Score defines a portable way to describe applications. This project provides a s
 - **RBAC by default** — users see only `Workload`
 
 ## Documentation
-- Spec & APIs: [`docs/spec/crds.md`](docs/spec/crds.md)  
-- Controllers & responsibilities: [`docs/spec/control-plane.md`](docs/spec/control-plane.md)  
-- Lifecycle & state: [`docs/spec/lifecycle.md`](docs/spec/lifecycle.md)  
-- Validation strategy (OpenAPI + CEL): [`docs/spec/validation.md`](docs/spec/validation.md)  
-- RBAC recommendations: [`docs/spec/rbac.md`](docs/spec/rbac.md)  
+- Spec & APIs: [`docs/spec/crds.md`](docs/spec/crds.md)
+- Controllers & responsibilities: [`docs/spec/control-plane.md`](docs/spec/control-plane.md)
+- Lifecycle & state: [`docs/spec/lifecycle.md`](docs/spec/lifecycle.md)
+- Orchestrator Config (profiles/selection/defaults): [`docs/spec/orchestrator-config.md`](docs/spec/orchestrator-config.md)
+- Validation strategy (OpenAPI + CEL): [`docs/spec/validation.md`](docs/spec/validation.md)
+- RBAC recommendations: [`docs/spec/rbac.md`](docs/spec/rbac.md)
 - ADR index: [`docs/ADR/`](docs/ADR/)
 
 ## Discussion & background

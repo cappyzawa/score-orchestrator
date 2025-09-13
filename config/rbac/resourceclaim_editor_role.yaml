@@ -11,12 +11,12 @@ metadata:
   labels:
     app.kubernetes.io/name: kbinit
     app.kubernetes.io/managed-by: kustomize
-  name: resourcebinding-editor-role
+  name: resourceclaim-editor-role
 rules:
 - apiGroups:
   - score.dev
   resources:
-  - resourcebindings
+  - resourceclaims
   verbs:
   - create
   - delete
@@ -28,6 +28,6 @@ rules:
 - apiGroups:
   - score.dev
   resources:
-  - resourcebindings/status
+  - resourceclaims/status
   verbs:
   - get
