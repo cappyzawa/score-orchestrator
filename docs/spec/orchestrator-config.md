@@ -79,6 +79,10 @@ backends:
       storage: string            # e.g., "1Gi-100Gi"
 ```
 
+**Quantity range grammar (normative):**
+- `"<q>"` (exact), `"<min>-<max>"` (inclusive), `"<min>-"` (min only), `"-<max>"` (max only).
+Quantities use Kubernetes resource formats.
+
 ### Template Types
 
 #### Manifests Template
@@ -98,7 +102,7 @@ template:
 ```yaml
 template:
   kind: helm
-  ref: "oci://registry.example.com/charts/webapp:1.2.3"
+  ref: "oci://registry.example.com/charts/webapp@sha256:deadbeef..."
   values:
     image:
       repository: ""              # Filled by WorkloadPlan projection
@@ -257,6 +261,10 @@ defaults:
     profile: batch-job
 ```
 
+**Label evaluation scope (normative):** Selectors are evaluated against the union of `Workload.metadata.labels` and the target `Namespace.metadata.labels`. If a key exists in both, the **Workload label value takes precedence**.
+
+**Selector precedence (normative):** `defaults.selectors[]` is evaluated in document order. The **first** matching selector wins; no further selectors are evaluated. `matchLabels` and `matchExpressions` are ANDed.
+
 ---
 
 ## Profile Selection Pipeline
@@ -283,13 +291,17 @@ For the selected profile, the orchestrator MUST:
 ### 3. Backend Selection (Normative)
 From filtered candidates, the orchestrator MUST:
 
-1. **Sort deterministically** by: `priority` (highest first) → `version` (highest semver first) → `backendId` (lexicographical)
+1. **Sort deterministically** by: `priority` (desc) → `version` (SemVer desc; releases rank above pre-releases) → `backendId` (lexicographical)
 2. **Select first** matching candidate
 3. **Handle selection failure**:
    - If no candidates remain: Set `RuntimeReady=False` with reason `RuntimeSelecting`
    - If admission denied: Set `RuntimeReady=False` with reason `PolicyViolation`
 
+**Hint handling (normative):** If a hinted profile does not exist, set `InputsValid=False (SpecInvalid)`. If it exists but yields no viable backend, set `RuntimeReady=False (RuntimeSelecting)`.
+
 **Tie-breaking rule**: When multiple backends have identical priority and version, selection is deterministic by lexicographical `backendId` comparison.
+
+**Version ordering (normative):** Versions follow SemVer 2.0.0. For the same base, a release (e.g., `1.2.3`) ranks **above** any pre-release (e.g., `1.2.3-rc.1`).
 
 ### Values Composition
 
@@ -310,6 +322,8 @@ Where:
 2. Workload normalization adds: `{image: "myapp:1.0", ports: [{port: 8080}]}`
 3. ResourceClaim outputs override: `{database_url: "postgres://..."}`
 4. Final values: Combined object used for template rendering
+
+**Projection failures (normative):** Missing required outputs in `${resources.<key>.outputs.<name>}` MUST set `RuntimeReady=False (ProjectionError)`.
 
 ---
 
