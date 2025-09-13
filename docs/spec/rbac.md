@@ -13,7 +13,7 @@ Score Orchestrator implements **layered access control** with strict separation 
 
 ## Access Control Matrix
 
-| Actor / Resource         | Workload (public) | ResourceBinding (internal) | WorkloadPlan (internal) |
+| Actor / Resource         | Workload (public) | ResourceClaim (internal) | WorkloadPlan (internal) |
 |--------------------------|-------------------|----------------------------|-------------------------|
 | Users (tenants)          | get/list/watch/create/update | **no access**               | **no access**            |
 | Orchestrator             | full              | read/write (status)         | full (single writer)     |
@@ -30,7 +30,7 @@ Score Orchestrator implements **layered access control** with strict separation 
 - Read `Workload` events for troubleshooting
 
 **Prohibited Actions:**
-- Direct access to `ResourceBinding` or `WorkloadPlan` resources
+- Direct access to `ResourceClaim` or `WorkloadPlan` resources
 - Modification of `Workload.status` fields
 - Creation or modification of internal orchestration resources
 - Access to platform-specific runtime resources
@@ -78,10 +78,10 @@ rules:
   verbs: ["get", "list"]
 # Internal resource visibility for debugging
 - apiGroups: ["score.dev"]
-  resources: ["resourcebindings", "workloadplans"]
+  resources: ["resourceclaims", "workloadplans"]
   verbs: ["get", "list", "watch"]
 - apiGroups: ["score.dev"]
-  resources: ["resourcebindings/status", "workloadplans/status"]
+  resources: ["resourceclaims/status", "workloadplans/status"]
   verbs: ["get", "list"]
 ```
 
@@ -93,7 +93,7 @@ The Orchestrator Controller requires comprehensive permissions as the central co
 
 **Core Responsibilities:**
 - **Exclusive writer** of `Workload.status`
-- Creator and manager of `ResourceBinding` and `WorkloadPlan` resources
+- Creator and manager of `ResourceClaim` and `WorkloadPlan` resources
 - Reader of **Orchestrator Config** (ConfigMap/OCI) for governance application
 - Event publisher for audit and debugging
 
@@ -113,10 +113,10 @@ rules:
   verbs: ["get", "list", "update", "patch"]
 # Internal resource management
 - apiGroups: ["score.dev"]
-  resources: ["resourcebindings", "workloadplans"]
+  resources: ["resourceclaims", "workloadplans"]
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 - apiGroups: ["score.dev"]
-  resources: ["resourcebindings/status"]
+  resources: ["resourceclaims/status"]
   verbs: ["get", "list", "watch"]
 # Event publishing
 - apiGroups: [""]
@@ -128,7 +128,7 @@ The Orchestrator **must be able to read its configuration** (e.g., a ConfigMap i
 
 **Security Constraints:**
 - **Cannot** create or modify `Workload` resources (prevents unauthorized workload injection)
-- **Cannot** write to `ResourceBinding.status` (prevents binding state corruption)
+- **Cannot** write to `ResourceClaim.status` (prevents binding state corruption)
 - **Must** verify OwnerReference before creating internal resources
 - **Should** implement leader election for high availability
 
@@ -138,7 +138,7 @@ Runtime Controllers consume execution plans and materialize workloads on target 
 
 **Core Responsibilities:**
 - Read `WorkloadPlan` resources for execution instructions
-- Read `ResourceBinding.status.outputs` for dependency information
+- Read `ResourceClaim.status.outputs` for dependency information
 - Report materialization progress via **runtime-internal** resources (not `WorkloadPlan.status`)
 - Manage platform-specific resources (Kubernetes Deployments, ECS Tasks, etc.)
 
@@ -158,10 +158,10 @@ rules:
   verbs: ["get", "list"]
 # Dependency output consumption
 - apiGroups: ["score.dev"]
-  resources: ["resourcebindings"]
+  resources: ["resourceclaims"]
   verbs: ["get", "list", "watch"]
 - apiGroups: ["score.dev"]
-  resources: ["resourcebindings/status"]
+  resources: ["resourceclaims/status"]
   verbs: ["get", "list"]
 # Platform-specific resource management (example: Kubernetes)
 - apiGroups: ["apps"]
@@ -181,7 +181,7 @@ rules:
 
 **Security Constraints:**
 - May **read** `Workload` metadata if needed (read-only); must not bypass orchestration
-- **Cannot** modify `ResourceBinding` resources (prevents binding manipulation)
+- **Cannot** modify `ResourceClaim` resources (prevents binding manipulation)
 - **Must** validate OwnerReference on `WorkloadPlan` before processing
 - **Should** implement resource quotas and limits for platform resources
 
@@ -190,8 +190,8 @@ rules:
 Provisioner Controllers manage specific resource types and provide standardized outputs.
 
 **Core Responsibilities:**
-- Claim and bind `ResourceBinding` resources of supported types
-- **Exclusive writer** of `ResourceBinding.status` for owned bindings
+- Claim and bind `ResourceClaim` resources of supported types
+- **Exclusive writer** of `ResourceClaim.status` for owned bindings
 - Provision underlying resources (databases, message queues, storage, etc.)
 - Populate standardized outputs for consumption by Runtime Controllers
 
@@ -202,12 +202,12 @@ kind: ClusterRole
 metadata:
   name: score-provisioner-controller
 rules:
-# ResourceBinding management
+# ResourceClaim management
 - apiGroups: ["score.dev"]
-  resources: ["resourcebindings"]
+  resources: ["resourceclaims"]
   verbs: ["get", "list", "watch", "update", "patch"]
 - apiGroups: ["score.dev"]
-  resources: ["resourcebindings/status"]
+  resources: ["resourceclaims/status"]
   verbs: ["get", "list", "update", "patch"]
 # Provider-specific resources (example: Secret/ConfigMap resolver)
 - apiGroups: [""]
@@ -243,7 +243,7 @@ rules:
 
 **Namespace-Scoped Resources:**
 - `Workload`: Deployed in application namespaces
-- `ResourceBinding`: Co-located with owning Workload  
+- `ResourceClaim`: Co-located with owning Workload  
 - `WorkloadPlan`: Co-located with owning Workload
 - Platform-specific resources: Follow namespace of parent Workload
 
@@ -253,7 +253,7 @@ rules:
 ### Resource Ownership and Lifecycle
 
 **OwnerReference Enforcement:**
-- `ResourceBinding` resources **MUST** have OwnerReference to parent `Workload`
+- `ResourceClaim` resources **MUST** have OwnerReference to parent `Workload`
 - `WorkloadPlan` resources **MUST** have OwnerReference to parent `Workload`
 - Platform-specific resources **SHOULD** have OwnerReference chain to `Workload`
 
@@ -267,7 +267,7 @@ rules:
 **Prohibited Cross-Namespace Access:**
 - Users cannot access Workloads in unauthorized namespaces
 - Controllers cannot modify resources outside OwnerReference chain
-- ResourceBindings cannot reference resources in different namespaces
+- ResourceClaims cannot reference resources in different namespaces
 
 **Permitted Cross-Namespace Access:**
 - Cluster-scoped provisioner resources (e.g., StorageClasses) are accessible
@@ -282,7 +282,7 @@ rules:
 - Status queries and monitoring
 
 **Controller Actions:**
-- `ResourceBinding` lifecycle management
+- `ResourceClaim` lifecycle management
 - `WorkloadPlan` generation and updates
 - Status aggregation and endpoint reflection
 - Platform resource materialization
@@ -349,9 +349,9 @@ func (r *OrchestratorReconciler) validatePermissions(ctx context.Context) error 
         return fmt.Errorf("missing Workload status write permission: %w", err)
     }
     
-    // Test ResourceBinding creation permission
-    if err := r.testResourceBindingCreation(ctx); err != nil {
-        return fmt.Errorf("missing ResourceBinding creation permission: %w", err)
+    // Test ResourceClaim creation permission
+    if err := r.testResourceClaimCreation(ctx); err != nil {
+        return fmt.Errorf("missing ResourceClaim creation permission: %w", err)
     }
     
     return nil

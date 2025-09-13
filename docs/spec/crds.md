@@ -6,7 +6,7 @@ The public contract is intentionally minimal and runtime-agnostic. Internal reso
 - **API Group/Version:** `score.dev/v1b1`
 - **Kinds (no "Score" prefix):**
   - Public (user-facing): `Workload`
-  - Internal (platform-facing): `ResourceBinding`, `WorkloadPlan`
+  - Internal (platform-facing): `ResourceClaim`, `WorkloadPlan`
 
 Policy and profile/backends mapping live in an **Orchestrator configuration** artifact (ConfigMap or OCI), not a public CRD.
 
@@ -20,7 +20,7 @@ See also: [`rbac.md`](rbac.md), [`control-plane.md`](control-plane.md), [`lifecy
 - **`Workload`** — The only resource users author and read.
 
 ### Internal APIs (Platform-facing)
-- **`ResourceBinding`** — Contract with **provisioners** for dependency provisioning.
+- **`ResourceClaim`** — Contract with **provisioners** for dependency provisioning.
   Spec is created/updated by the Orchestrator; **status is written by Provisioners**.
 - **`WorkloadPlan`** — Orchestrator-to-Runtime projection plan (single writer: Orchestrator).  
   Same name/namespace as the target `Workload` (OwnerRef set). Hidden from users.
@@ -98,7 +98,7 @@ Runtime selection and platform details are **not** part of this spec.
 ### Status (user-facing, minimal, abstract)
 - **`endpoint: string|null`** — canonical URL if available; else `null` (format: uri)
 - **`conditions[]`** — Kubernetes-style items with abstract reasons only  
-  - **Types:** `Ready`, `BindingsReady`, `RuntimeReady`, `InputsValid`
+  - **Types:** `Ready`, `ClaimsReady`, `RuntimeReady`, `InputsValid`
   - **Reasons (fixed, abstract):**  
     `Succeeded`, `SpecInvalid`, `PolicyViolation`,  
     `BindingPending`, `BindingFailed`,  
@@ -108,7 +108,7 @@ Runtime selection and platform details are **not** part of this spec.
   - **Message:** one neutral sentence; **no runtime-specific nouns**.
 - **`bindings[]`** — summary per dependency:  
   `key`, `phase (Pending|Binding|Bound|Failed)`, `reason`, `message`, `outputsAvailable: bool`
-- **Readiness rule:** `InputsValid=True AND BindingsReady=True AND RuntimeReady=True`
+- **Readiness rule:** `InputsValid=True AND ClaimsReady=True AND RuntimeReady=True`
 
 ### Orchestrator configuration (non-CRD, conceptual)
 
@@ -126,7 +126,7 @@ Templates are declarative (no embedded functions) and should use immutable refs 
 
 ---
 
-## ResourceBinding (aka ResourceClaim) (`score.dev/v1b1`) — Internal (contract with provisioners)
+## ResourceClaim (`score.dev/v1b1`) — Internal (contract with provisioners)
 
 ### Purpose
 Represents an abstract dependency request derived from a `Workload`.
@@ -138,7 +138,7 @@ Provisioners watch this resource, provision/bind concrete services, and publish 
 
 #### Required/Optional Summary
 
-**ResourceBinding (spec)**
+**ResourceClaim (spec)**
 
 | Field                            | Req     | Notes                               |
 | -------------------------------- | ------- | ----------------------------------- |
@@ -150,7 +150,7 @@ Provisioners watch this resource, provision/bind concrete services, and publish 
 | `params`                         | No      | `JSON` (opaque)                     |
 | `deprovisionPolicy`              | No      | Enum (Delete/Retain/Orphan)         |
 
-**ResourceBinding (status)**
+**ResourceClaim (status)**
 
 | Field                                       | Req     | Notes                                     |
 | ------------------------------------------- | ------- | ----------------------------------------- |
@@ -195,7 +195,7 @@ Provisioners watch this resource, provision/bind concrete services, and publish 
   object (i.e., the CEL condition evaluates to true).
 - `observedGeneration`, `lastTransitionTime`
 
-> The Orchestrator aggregates Binding status into `Workload.status.bindings[]` and `BindingsReady`.
+> The Orchestrator aggregates Binding status into `Workload.status.bindings[]` and `ClaimsReady`.
 
 ---
 
@@ -233,14 +233,14 @@ For example, `imageFrom: { bindingKey, outputKey }` may be used to bind an `outp
 - **`bindings[]`**: desired summaries of each dependency (`key`, `type`, optional `class/params`)
 
 > Separation of concerns:  
-> **Plan** carries **how to use** (mapping rules); **ResourceBinding** carries **what to provide** (outputs).
+> **Plan** carries **how to use** (mapping rules); **ResourceClaim** carries **what to provide** (outputs).
 
 ---
 
 ## Cross-resource linkage
 
 - **Key-based mapping:** `WorkloadPlan.spec.projection` refers to dependencies by `bindingKey` (the key in `Workload.spec.resources`).  
-  Each `ResourceBinding` is created for that key; its `status.outputs` provide concrete values.
+  Each `ResourceClaim` is created for that key; its `status.outputs` provide concrete values.
 - **Endpoint propagation:** The Runtime determines an endpoint (if any). The Orchestrator reflects it into `Workload.status.endpoint`.  
   At most one canonical endpoint is exposed to users.
 
@@ -272,7 +272,7 @@ Fields that intentionally carry arbitrary JSON **MUST** use the Kubernetes type
 Do not use `interface{}` / `any` / `runtime.RawExtension` for these fields.
 
 Affected fields:
-- `ResourceBinding.spec.params`
+- `ResourceClaim.spec.params`
 - `WorkloadPlan.spec.bindings[].params`
 
 ---
@@ -282,12 +282,12 @@ Affected fields:
 - **Status subresource:** CRDs expose `status` as a subresource.  
 - **Status authorship (Single-writer principle):**  
   - `Workload.status`: written **only** by the Orchestrator.
-  - `ResourceBinding.status`: written **only** by Provisioner implementations.
+  - `ResourceClaim.status`: written **only** by Provisioner implementations.
   - `WorkloadPlan`: no `.status`. Runtime controllers **must not** write to `Workload.status`;
     they publish detailed diagnostics to their **own** internal resources.
   
   See `docs/spec/rbac.md` for recommended RBAC roles.
-- **Owner references:** `ResourceBinding` and `WorkloadPlan` carry OwnerRef to their `Workload` for cascading GC.
+- **Owner references:** `ResourceClaim` and `WorkloadPlan` carry OwnerRef to their `Workload` for cascading GC.
 - **No runtime nouns in user-facing docs:** Never expose Deployment/Pod/ECS Task names to users.
 
 See: [`control-plane.md`](control-plane.md) for who watches/writes what, and [`validation.md`](validation.md) for schema/CEL invariants.

@@ -11,7 +11,7 @@ User applies Workload
     ↓
 Orchestrator reads **Orchestrator Config** and Admission (policy)
     ↓  
-Orchestrator generates ResourceBinding resources
+Orchestrator generates ResourceClaim resources
     ↓
 Provisioner Controllers bind dependencies and provide outputs
     ↓
@@ -34,7 +34,7 @@ User submits a `Workload` resource via `kubectl apply` or equivalent API call.
 2. **Policy Application**: Reads **Orchestrator Config** (ConfigMap/OCI) and applies Admission rules
 3. **Status Initialization**: Sets initial conditions:
    - `InputsValid=Unknown` (validation in progress)
-   - `BindingsReady=False` (no bindings created yet)  
+   - `ClaimsReady=False` (no bindings created yet)  
    - `RuntimeReady=False` (runtime not engaged yet)
    - `Ready=False` (derived from above conditions)
 
@@ -49,22 +49,22 @@ User submits a `Workload` resource via `kubectl apply` or equivalent API call.
 The orchestrator selects an **abstract profile** (auto; optional abstract hint) and a **backend** deterministically (priority→version→name) before plan generation.
 
 1. **Resource Analysis**: Parse `spec.resources` to identify required dependencies
-2. **ResourceBinding Generation**: Create `ResourceBinding` resources for each dependency:
+2. **ResourceClaim Generation**: Create `ResourceClaim` resources for each dependency:
    - Set appropriate `spec.type`, `spec.class`, and `spec.params`
    - Establish OwnerReference to parent Workload
    - Select appropriate provisioner based on Orchestrator configuration
 
-### ResourceBinding Lifecycle
-Each `ResourceBinding` follows its own state progression:
+### ResourceClaim Lifecycle
+Each `ResourceClaim` follows its own state progression:
 
 ```
-ResourceBinding Phase Transitions:
+ResourceClaim Phase Transitions:
 Pending → Binding → Bound (success)
                  ↘ Failed (error)
 ```
 
 #### Pending Phase
-- **Trigger**: ResourceBinding created by Orchestrator
+- **Trigger**: ResourceClaim created by Orchestrator
 - **State**: Waiting for Resolver Controller to claim the binding
 - **Orchestrator Status**: Updates `Workload.status.bindings[].phase=Pending`
 
@@ -79,7 +79,7 @@ Pending → Binding → Bound (success)
 - **Orchestrator Status**: 
   - Updates `Workload.status.bindings[].phase=Bound`
   - Sets `outputsAvailable=true`
-  - If all bindings are Bound, sets `BindingsReady=True`
+  - If all bindings are Bound, sets `ClaimsReady=True`
 
 #### Failed Phase (Error)
 - **Trigger**: Provisioner Controller encounters unrecoverable error
@@ -87,20 +87,20 @@ Pending → Binding → Bound (success)
 - **Orchestrator Status**:
   - Updates `Workload.status.bindings[].phase=Failed`
   - Sets appropriate abstract `reason` (e.g., `QuotaExceeded`, `PermissionDenied`)
-  - Sets `BindingsReady=False`
+  - Sets `ClaimsReady=False`
 
-### BindingsReady Determination
+### ClaimsReady Determination
 
-The Orchestrator sets `BindingsReady=True` when:
-- All required ResourceBindings are in `Bound` phase AND
-- All critical ResourceBindings have `outputsAvailable=true` AND
-- No ResourceBindings are in `Failed` phase
+The Orchestrator sets `ClaimsReady=True` when:
+- All required ResourceClaims are in `Bound` phase AND
+- All critical ResourceClaims have `outputsAvailable=true` AND
+- No ResourceClaims are in `Failed` phase
 
 ## Phase 3: Workload Plan Generation
 
 ### Trigger Conditions
 - `InputsValid=True` (specification is valid)
-- `BindingsReady=True` (all dependencies are bound)
+- `ClaimsReady=True` (all dependencies are bound)
 
 ### Orchestrator Actions
 1. **Projection Rule Generation**: Create container environment variable mappings:
@@ -141,7 +141,7 @@ Pending → Planning → Projected (success)
 ## Phase 4: Runtime Materialization
 
 ### Runtime Controller Actions
-1. **Plan Consumption**: Read `WorkloadPlan` and referenced `ResourceBinding.status.outputs`
+1. **Plan Consumption**: Read `WorkloadPlan` and referenced `ResourceClaim.status.outputs`
 2. **Platform Translation**: Convert abstract plan to platform-specific resources:
    - **Kubernetes**: Generate Deployment, Service, ConfigMap, Secret resources
    - **ECS**: Create Task Definition, Service, Load Balancer configurations
@@ -169,11 +169,11 @@ The Orchestrator continuously monitors all dependent resources and maintains the
 #### Ready Computation Logic
 
 ```
-Ready = InputsValid ∧ BindingsReady ∧ RuntimeReady
+Ready = InputsValid ∧ ClaimsReady ∧ RuntimeReady
 
 where:
   InputsValid = (spec validation passed ∧ policy compliance verified)
-  BindingsReady = (all ResourceBindings in Bound phase ∧ outputs available)  
+  ClaimsReady = (all ResourceClaims in Bound phase ∧ outputs available)  
   RuntimeReady = (platform materialization successful ∧ workload functional)
 ```
 
@@ -225,7 +225,7 @@ Only **one endpoint** is exposed in `status.endpoint` to maintain interface simp
 
 #### Manual Recovery
 - Users can trigger reconciliation by updating Workload metadata annotations
-- Platform operators can reset binding states by deleting and recreating ResourceBindings
+- Platform operators can reset binding states by deleting and recreating ResourceClaims
 - Emergency rollback available through Workload generation reversion
 
 ## State Consistency and Observability
@@ -252,8 +252,8 @@ kubectl wait --for=condition=Ready workload/myapp
 
 #### Platform-Facing Observability
 ```bash  
-# ResourceBinding status
-kubectl get resourcebinding -l workload=myapp
+# ResourceClaim status
+kubectl get resourceclaim -l workload=myapp
 
 # WorkloadPlan status
 kubectl get workloadplan myapp
@@ -276,11 +276,11 @@ kubectl get events --field-selector involvedObject.kind=Workload
         ↓
 [InputsValid Check] → [Failed] → [Manual Fix Required]
         ↓ (True)
-[Generate ResourceBindings] 
+[Generate ResourceClaims] 
         ↓
 [Wait for All Bindings] → [Binding Failed] → [Error Status + Retry]
         ↓ (All Bound)
-[BindingsReady=True]
+[ClaimsReady=True]
         ↓
 [Generate WorkloadPlan]
         ↓  
@@ -297,7 +297,7 @@ kubectl get events --field-selector involvedObject.kind=Workload
 
 - If `containers.*.image != "."`, the value is treated as a concrete OCI reference.
 - If `containers.*.image == "."`, the Orchestrator expects an image to be supplied at deploy time:
-  - Typically via a `ResourceBinding` of type `image|build|buildpack` resolved by a Provisioner that builds and pushes an image.
+  - Typically via a `ResourceClaim` of type `image|build|buildpack` resolved by a Provisioner that builds and pushes an image.
   - The `WorkloadPlan` carries a projection such as:
     - `containers[].imageFrom: { bindingKey, outputKey: "image" }`
   - The Runtime consumes the plan plus binding outputs to set the final image used for execution.
