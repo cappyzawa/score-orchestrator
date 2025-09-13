@@ -1,9 +1,9 @@
 # ADR-0003 — Control-plane simplification around a "Workload-only" UX
 
-**Status:** Accepted  
-**Date:** 2025-09-13 (JST)  
-**Discussion:** https://github.com/score-spec/spec/discussions/157  
-**Feedback trigger:** https://github.com/score-spec/spec/discussions/157#discussioncomment-14375929  
+**Status:** Accepted
+**Date:** 2025-09-13 (JST)
+**Discussion:** https://github.com/score-spec/spec/discussions/157
+**Feedback trigger:** https://github.com/score-spec/spec/discussions/157#discussioncomment-14375929
 **Related ADRs:** ADR-0001 (Architecture), ADR-0002 (Community-scope Orchestrator)
 
 ---
@@ -14,7 +14,7 @@ Early drafts introduced policy/projection/provisioning overlaps (e.g., PlatformP
 ## Decision
 1) Keep `Workload` only for users  
 2) Remove `PlatformPolicy` CRD (policy = Orchestrator Config + Admission)  
-3) Keep internal: `ResourceBinding` (=Claim), `WorkloadPlan` (=Projection)  
+3) Keep internal: `ResourceClaim`, `WorkloadPlan`  
 4) External term = **provisioner** (resolver is internal wording)  
 5) **Workload profiles** = concept only (ConfigMap/OCI template bundles)  
 6) Default auto-selection; optional abstract hints via annotation  
@@ -34,8 +34,8 @@ Early drafts introduced policy/projection/provisioning overlaps (e.g., PlatformP
   * `Workload` (unchanged responsibilities)
 
 * **Internal:**
-  * `ResourceBinding` ("ResourceClaim" as a documentation alias)
-  * `WorkloadPlan` ("WorkloadProjection" as a documentation alias)
+  * `ResourceClaim`
+  * `WorkloadPlan`
 
 *No new CRDs are added in this ADR; `PlatformPolicy` is removed.*
 
@@ -63,7 +63,7 @@ A single **orchestrator config** (ConfigMap or OCI document) becomes the source 
 
 ### Provision → Projection → Render
 
-* **Provision (provisioners)**: For each declared `resources` in Workload, create/resolve `ResourceBinding` and wait for `outputs`.
+* **Provision (provisioners)**: For each declared `resources` in Workload, create/resolve `ResourceClaim` and wait for `outputs`.
 * **Projection/Plan**: Orchestrator builds an IR (`WorkloadPlan`) containing:
   * selected `runtimeClass` and `backendId`
   * `template` reference and `kind`
@@ -82,7 +82,7 @@ A single **orchestrator config** (ConfigMap or OCI document) becomes the source 
 * `Workload.status.endpoint` (single canonical URI or null)
 * `conditions[]` with abstract types/reasons per ADR‑0001
 * `bindings[]` summaries
-* **Readiness rule** unchanged: `InputsValid=True AND BindingsReady=True AND RuntimeReady=True`.
+* **Readiness rule** unchanged: `InputsValid=True AND ClaimsReady=True AND RuntimeReady=True`.
 
 ### Architecture overview
 
@@ -92,12 +92,12 @@ A single **orchestrator config** (ConfigMap or OCI document) becomes the source 
 |  (authors only    |  Workload | - reads Orchestrator    |  Plan/IR | - watches Plan/IR     |
 |   Workload)       +---------->+   Config & Admission    +--------->+ - fetches template    |
 +-------------------+           | - selects Profile/Backend|          | - render & apply      |
-                                | - creates ResourceBinding|          | - diagnostics (internal)
+                                | - creates ResourceClaim|          | - diagnostics (internal)
                                 | - builds WorkloadPlan    |          +-----------+-----------+
                                 | - updates Workload.status|                      |
                                 +-----------+--------------+                      |
                                             |                                 Applied objects
-                                            |  ResourceBinding                (runtime‑specific)
+                                            |  ResourceClaim                (runtime‑specific)
                              +--------------v--------------+                         |
                              |        Provisioner          |<------------------------+
                              | (create or bind dependency) |
@@ -120,7 +120,7 @@ A single **orchestrator config** (ConfigMap or OCI document) becomes the source 
 **Trade-offs / Risks**
 
 * Operators manage a non-CRD config artifact (ConfigMap/OCI) and Admission rules—requires good tooling and GitOps hygiene.
-* No immediate API rename may preserve some legacy terms (Binding/Plan) in code; docs introduce Claim/Projection aliases.
+* No immediate API rename may preserve some legacy terms (Binding/Plan) in code; docs use Claim/Projection terminology.
 
 ---
 
@@ -142,20 +142,7 @@ A single **orchestrator config** (ConfigMap or OCI document) becomes the source 
 
 ---
 
-## Migration
-
-* Remove `PlatformPolicy` CRD and migrate rules to the Orchestrator config + Admission.
-* Keep existing `ResourceBinding` and `WorkloadPlan` APIs; start using **Claim/Projection** terms in docs.
-* Ship initial profiles (e.g., `web-service`, `batch-job`) and provisioners as immutable artifacts.
-
----
-
-## Follow-up work
-
-* Update `README.md`, `docs/spec/crds.md`, `docs/spec/lifecycle.md`, `docs/spec/validation.md`, `docs/spec/rbac.md` to reflect this ADR.
-* Define a **minimal profile bundle format** (template kinds, value contract, precedence).
-* Reference implementation: Kubernetes Runtime Controller supporting `manifests` and `helm`.
-* Provide a Score→Workload conversion CLI to ease adoption while keeping `score.yaml` as repository SSoT if desired.
+<!-- Proposal phase: migration/follow-ups are out of scope in this ADR. -->
 
 ---
 
