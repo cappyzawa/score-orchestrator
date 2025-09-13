@@ -10,7 +10,8 @@ It complements:
 ## Controller-centric responsibilities (watch vs. write)
 
 ### Orchestrator (reference project, independent from Score Official)
-- **Watches:** `Workload`, `PlatformPolicy`, `ResourceBinding`, `WorkloadPlan`
+- **Watches:** `Workload`, `ResourceBinding`, `WorkloadPlan`
+- **Reads:** **Orchestrator Config** (ConfigMap/OCI) and applies Admission
 - **Creates/updates (spec):**
   - `ResourceBinding` — one per `Workload.spec.resources.<key>` (OwnerRef = Workload)
   - `WorkloadPlan` — same name as the target Workload (OwnerRef = Workload)
@@ -19,11 +20,11 @@ It complements:
 - **Finalization:**
   - Adds a finalizer to `Workload` to ensure `ResourceBinding` deprovision completes before removal
 
-### Resolver (PF/vendor)
+### Provisioner (PF/vendor)
 - **Watches:** `ResourceBinding` for its `spec.type`; own `Secret/ConfigMap`; external service APIs as needed
 - **Creates/updates (objects):** `Secret/ConfigMap` with credentials/config (same namespace)
 - **Updates (status):** `ResourceBinding.status` (`phase`, `reason`, `message`, `outputs`, timestamps)
-- **Produces image outputs (when applicable):** Resolvers for `image|build|buildpack` types publish an OCI reference as `ResourceBinding.status.outputs.image`.
+- **Produces image outputs (when applicable):** Provisioners for `image|build|buildpack` types publish an OCI reference as `ResourceBinding.status.outputs.image`.
 - **Plan linkage:** The Orchestrator emits a `WorkloadPlan` projection that binds that output into the final container image, e.g.:
   - `containers[].imageFrom: { bindingKey, outputKey: "image" }`
 - **Finalization:** On `ResourceBinding` deletion, deprovision external resources / Secrets, then remove finalizer
@@ -39,10 +40,9 @@ It complements:
 | Resource (`score.dev/v1b1`) | Read/watch                                 | Write (spec/create)           | Write (status)            | Notes |
 |---|---|---|---|---|
 | `Workload` (public)         | Orchestrator, Runtime                      | Users only                    | **Orchestrator only**     | Orchestrator attaches a finalizer to control deletion order |
-| `PlatformPolicy` (PF, hidden) | Orchestrator                              | PF operators                  | —                         | Cluster-scoped; hidden from users via RBAC |
-| `ResourceBinding` (internal) | Orchestrator, Resolver, Runtime           | **Orchestrator**              | **Resolver**              | One per `resources.<key>` |
+| `ResourceBinding` (internal) | Orchestrator, Provisioner, Runtime       | **Orchestrator**              | **Provisioner**           | One per `resources.<key>` |
 | `WorkloadPlan` (internal)   | Runtime, Orchestrator                      | **Orchestrator** (single writer) | —                      | Same name as Workload; OwnerRef = Workload |
-| `Secret/ConfigMap` (outputs) | Runtime (read), Orchestrator (not required) | **Resolver**                 | —                         | Same namespace; hidden from users |
+| `Secret/ConfigMap` (outputs) | Runtime (read), Orchestrator (not required) | **Provisioner**              | —                         | Same namespace; hidden from users |
 
 ## Binding ↔ Plan linkage (how they meet)
 - **Key-based mapping:** `WorkloadPlan.spec.projection` refers to dependencies by `bindingKey` (the key in `Workload.spec.resources`).  
@@ -51,7 +51,7 @@ It complements:
 
 **Example: Image resolution flow:**
 ```yaml
-# ResourceBinding.status.outputs (by Resolver)
+# ResourceBinding.status.outputs (by Provisioner)
 outputs:
   image: "registry.example.com/myapp:v1.2.3"
 

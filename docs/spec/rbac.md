@@ -13,12 +13,12 @@ Score Orchestrator implements **layered access control** with strict separation 
 
 ## Access Control Matrix
 
-| Actor / Resource         | Workload (public) | PlatformPolicy (PF) | ResourceBinding (internal) | WorkloadPlan (internal) |
-|--------------------------|-------------------|---------------------|----------------------------|-------------------------|
-| Users (tenants)          | get/list/watch/create/update | **no access**       | **no access**               | **no access**            |
-| Orchestrator             | full              | read                | read/write (status)         | full (single writer)     |
-| Runtime Controller(s)    | read              | read (optional)     | read                        | read                     |
-| Resolver(s)              | read              | read (optional)     | read/write (status)         | none                     |
+| Actor / Resource         | Workload (public) | ResourceBinding (internal) | WorkloadPlan (internal) |
+|--------------------------|-------------------|----------------------------|-------------------------|
+| Users (tenants)          | get/list/watch/create/update | **no access**               | **no access**            |
+| Orchestrator             | full              | read/write (status)         | full (single writer)     |
+| Runtime Controller(s)    | read              | read                        | read                     |
+| Provisioner(s)           | read              | read/write (status)         | none                     |
 
 ## User Permissions
 
@@ -58,7 +58,6 @@ rules:
 ### Platform Administrators  
 
 **Additional Permissions:**
-- Create, update, delete `PlatformPolicy` resources
 - Read internal resources for debugging and monitoring
 - Manage controller service accounts and permissions
 - Access platform-specific runtime resources for troubleshooting
@@ -72,7 +71,7 @@ metadata:
 rules:
 # All user permissions
 - apiGroups: ["score.dev"]
-  resources: ["workloads", "platformpolicies"]
+  resources: ["workloads"]
   verbs: ["*"]
 - apiGroups: ["score.dev"]
   resources: ["workloads/status"]
@@ -95,7 +94,7 @@ The Orchestrator Controller requires comprehensive permissions as the central co
 **Core Responsibilities:**
 - **Exclusive writer** of `Workload.status`
 - Creator and manager of `ResourceBinding` and `WorkloadPlan` resources
-- Reader of `PlatformPolicy` for governance application
+- Reader of **Orchestrator Config** (ConfigMap/OCI) for governance application
 - Event publisher for audit and debugging
 
 **Required ClusterRole:**
@@ -112,10 +111,6 @@ rules:
 - apiGroups: ["score.dev"]
   resources: ["workloads/status"]
   verbs: ["get", "list", "update", "patch"]
-# Policy consumption
-- apiGroups: ["score.dev"]
-  resources: ["platformpolicies"]
-  verbs: ["get", "list", "watch"]
 # Internal resource management
 - apiGroups: ["score.dev"]
   resources: ["resourcebindings", "workloadplans"]
@@ -128,6 +123,8 @@ rules:
   resources: ["events"]
   verbs: ["create", "patch"]
 ```
+
+The Orchestrator **must be able to read its configuration** (e.g., a ConfigMap in the control namespace) and/or fetch OCI artifacts referenced by that config.
 
 **Security Constraints:**
 - **Cannot** create or modify `Workload` resources (prevents unauthorized workload injection)
@@ -188,9 +185,9 @@ rules:
 - **Must** validate OwnerReference on `WorkloadPlan` before processing
 - **Should** implement resource quotas and limits for platform resources
 
-### Resolver Controllers
+### Provisioner Controllers
 
-Resolver Controllers manage specific resource types and provide standardized outputs.
+Provisioner Controllers manage specific resource types and provide standardized outputs.
 
 **Core Responsibilities:**
 - Claim and bind `ResourceBinding` resources of supported types
@@ -198,12 +195,12 @@ Resolver Controllers manage specific resource types and provide standardized out
 - Provision underlying resources (databases, message queues, storage, etc.)
 - Populate standardized outputs for consumption by Runtime Controllers
 
-**Required ClusterRole (Generic Resolver):**
+**Required ClusterRole (Generic Provisioner):**
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: score-resolver-controller
+  name: score-provisioner-controller
 rules:
 # ResourceBinding management
 - apiGroups: ["score.dev"]
@@ -222,9 +219,9 @@ rules:
   verbs: ["create", "patch"]
 ```
 
-**Specialized Resolver Permissions:**
+**Specialized Provisioner Permissions:**
 
-*Database Resolver Example:*
+*Database Provisioner Example:*
 ```yaml
 # Additional permissions for database provisioning
 - apiGroups: ["postgresql.cnpg.io"]
@@ -232,7 +229,7 @@ rules:
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 ```
 
-*Cloud Resource Resolver Example:*
+*Cloud Resource Provisioner Example:*
 ```yaml  
 # Additional permissions for cloud resource management
 - apiGroups: [""]
@@ -251,7 +248,6 @@ rules:
 - Platform-specific resources: Follow namespace of parent Workload
 
 **Cluster-Scoped Resources:**
-- `PlatformPolicy`: Applied cluster-wide with namespace targeting
 - Controller ServiceAccounts: Cluster-scoped for cross-namespace operations
 
 ### Resource Ownership and Lifecycle
@@ -274,8 +270,7 @@ rules:
 - ResourceBindings cannot reference resources in different namespaces
 
 **Permitted Cross-Namespace Access:**
-- PlatformPolicy can target multiple namespaces via selectors
-- Cluster-scoped resolver resources (e.g., StorageClasses) are accessible
+- Cluster-scoped provisioner resources (e.g., StorageClasses) are accessible
 - Controllers can read cluster-scoped resources for configuration
 
 ## Audit and Compliance
@@ -284,7 +279,6 @@ rules:
 
 **User Actions:**
 - `Workload` creation, modification, deletion
-- `PlatformPolicy` management (admin users)
 - Status queries and monitoring
 
 **Controller Actions:**

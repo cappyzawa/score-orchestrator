@@ -91,6 +91,8 @@ spec.containers.all(container,
 - If `service.ports` is present, each port **requires** `port` (integer).
 - If `resources` is present, each item **requires** `type`.
 - For `files[*]`, **exactly one** of `content | binaryContent | source` must be set.
+- **Placeholders resolution order**: **Provision → Projection(IR) → Render** (`${resources.*}` is resolved by provisioner outputs)
+- **Values precedence**: **`defaults ⊕ normalize(Workload) ⊕ outputs`** (right-hand wins)
 
 **CEL examples (illustrative)**
 - Exactly-one for files:
@@ -168,7 +170,7 @@ metadata:
 
 **Runtime class Restrictions:**
 
-> Runtime class selection is governed by `PlatformPolicy` and must not appear in `Workload.spec`.
+> Runtime class selection is governed by **Orchestrator configuration + Admission** and must not appear in `Workload.spec`.
 
 **Network and Security Policies:**
 ```yaml
@@ -184,6 +186,26 @@ spec:
       - port: 8080                # Allowed port range
       - port: 22                  # SSH port blocked by policy
 ```
+
+### Abstract Hints Validation (VAP/OPA)
+
+**Profile Selection Hints:**
+```yaml
+# Example abstract hint annotations (validated by policy)
+metadata:
+  annotations:
+    score.dev/profile: "web-service"        # ∈ {web-service, batch-job, event-consumer, function}
+    score.dev/requirements: "scale-to-zero,http-ingress"  # abstract feature requirements
+```
+
+**Policy-enforced vocabulary examples:**
+- `score.dev/profile`: `web-service`, `batch-job`, `event-consumer`, `function`
+- `score.dev/requirements`: `scale-to-zero`, `http-ingress`, `persistent-storage`, `gpu-compute`
+
+### Organization policy (Admission) — examples
+- `metadata.annotations["score.dev/profile"]` ∈ { `web-service`, `batch-job`, `event-consumer`, `function`, `worker` }
+- `metadata.annotations["score.dev/requirements"]` ⊆ { `scale-to-zero`, `http-ingress`, `private-networking` }
+- Runtime-specific nouns are **rejected**.
 
 ### Environmental and Operational Policies
 

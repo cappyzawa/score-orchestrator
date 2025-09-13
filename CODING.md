@@ -1,7 +1,7 @@
 
 # CODING.md — Score Orchestrator (controllers)
 
-Shared coding rules for Score Orchestrator / Resolver / Runtime controllers. We operate **docs‑first** (the spec is the source of truth), enforce **single‑writer**, keep **platform‑agnostic vocabulary**, and prefer **event‑driven** designs.
+Shared coding rules for Score Orchestrator / Provisioner / Runtime controllers. We operate **docs‑first** (the spec is the source of truth), enforce **single‑writer**, keep **platform‑agnostic vocabulary**, and prefer **event‑driven** designs.
 
 ---
 
@@ -41,7 +41,7 @@ Shared coding rules for Score Orchestrator / Resolver / Runtime controllers. We 
 * **Finalizer add/remove**: `Patch(MergeFrom(before))`. On 409 conflicts, requeue.
 * **Status updates**: Use `Status().Patch`. Batch multiple condition and endpoint updates into a **single patch**.
 * **Owned resource upsert**: `Create` or `Patch` (avoid `Apply` for now). Always set OwnerRef.
-* **Never write `ResourceBinding.status`**: Only the Resolver updates it.
+* **Never write `ResourceBinding.status`**: Only the Provisioner updates it.
 * **No `WorkloadPlan.status`**: Do not add or write `.status` on `WorkloadPlan`.
 
 ---
@@ -58,15 +58,17 @@ Shared coding rules for Score Orchestrator / Resolver / Runtime controllers. We 
 ## 5. Endpoint rules
 
 * **Single value**: `Workload.status.endpoint` holds at most one canonical endpoint.
-* **Priority (MVP)**: PlatformPolicy template → (future) Runtime report → (future) Service‑derived → default.
+* **Priority (MVP)**: Orchestrator Config template → Runtime report → Service‑derived → default.
 * **Normalization**: Prefer https, omit default ports 80/443, prefer FQDN, support IPv6 with brackets, no trailing slash.
 
 ---
 
 ## 6. RBAC & visibility
 
-* **Orchestrator**: read `workloads`; write `workloads/status`; CRUD `resourcebindings` and `workloadplans`; read `resourcebindings/status`; read `platformpolicies`; create/patch `events`.
-* **Resolver**: may write `resourcebindings/status` (others minimal).
+* **Orchestrator**: read `workloads`; write `workloads/status`; CRUD `resourcebindings` and `workloadplans`; read `resourcebindings/status`; create/patch `events`.
+* **Provisioner**: may write `resourcebindings/status` (others minimal).
+
+The Orchestrator **reads its configuration** (ConfigMap/OCI) out-of-band from the CRDs.
 * **Runtime**: writes details to its own internal objects; must not write `Workload.status`.
 
 ---
