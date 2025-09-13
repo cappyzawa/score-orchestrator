@@ -12,19 +12,21 @@
 Early drafts introduced policy/projection/provisioning overlaps (e.g., PlatformPolicy vs WorkloadPlan). We aim to keep "Workload-only" UX while reducing CRDs and aligning with score-k8s (provisioners, generate→patch→apply).
 
 ## Decision
-1) Keep `Workload` only for users  
-2) Remove `PlatformPolicy` CRD (policy = Orchestrator Config + Admission)  
-3) Keep internal: `ResourceClaim`, `WorkloadPlan`  
-4) External term = **provisioner** (resolver is internal wording)  
-5) **Workload profiles** = concept only (ConfigMap/OCI template bundles)  
-6) Default auto-selection; optional abstract hints via annotation  
-7) Orchestrator: select & build IR; Runtime: render/apply; single-writer status
+1) Keep `Workload` only for users
+2) Remove `PlatformPolicy` CRD (policy = Orchestrator Config + Admission)
+3) Keep internal: `ResourceClaim`, `WorkloadPlan`
+4) Rename `ResourceBinding` → `ResourceClaim` for clarity (claiming dependencies vs binding execution)
+5) External term = **provisioner** (resolver is internal wording)
+6) **Workload profiles** = concept only (ConfigMap/OCI template bundles)
+7) Default auto-selection; optional abstract hints via annotation
+8) Orchestrator: select & build IR; Runtime: render/apply; single-writer status
 
 ## Rationale
 - Reduce confusion (policy vs plan vs template)
 - Align with score-k8s mental model
 - Backend choice is encapsulated; users stay runtime-agnostic
 - Fewer public CRDs; distribution via OCI/ConfigMap
+- `ResourceClaim` better reflects intent: claiming/requesting dependencies rather than binding execution state
 
 ## Details
 
@@ -92,7 +94,7 @@ A single **orchestrator config** (ConfigMap or OCI document) becomes the source 
 |  (authors only    |  Workload | - reads Orchestrator    |  Plan/IR | - watches Plan/IR     |
 |   Workload)       +---------->+   Config & Admission    +--------->+ - fetches template    |
 +-------------------+           | - selects Profile/Backend|          | - render & apply      |
-                                | - creates ResourceClaim|          | - diagnostics (internal)
+                                | - creates ResourceClaim  |          | - diagnostics (internal)
                                 | - builds WorkloadPlan    |          +-----------+-----------+
                                 | - updates Workload.status|                      |
                                 +-----------+--------------+                      |
