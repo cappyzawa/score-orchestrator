@@ -174,6 +174,11 @@ type ResourceSpec struct {
 
 // WorkloadSpec defines the desired state of Workload
 type WorkloadSpec struct {
+	// Profile specifies which orchestrator profile to use for this workload
+	// If not specified, the default profile from orchestrator config will be used
+	// +optional
+	Profile *string `json:"profile,omitempty"`
+
 	// Containers define the containers in the workload
 	// +kubebuilder:validation:MinProperties=1
 	// +kubebuilder:validation:MaxProperties=10

@@ -65,7 +65,7 @@ Pending → Binding → Bound (success)
 
 #### Pending Phase
 - **Trigger**: ResourceClaim created by Orchestrator
-- **State**: Waiting for Resolver Controller to claim the binding
+- **State**: Waiting for Provisioner Controller to claim the binding
 - **Orchestrator Status**: Updates `Workload.status.bindings[].phase=Pending`
 
 #### Binding Phase  

@@ -31,7 +31,7 @@ Shared coding rules for Score Orchestrator / Provisioner / Runtime controllers. 
 * **Watches & Indexers**: Register field indexers *before* manager start (`ResourceClaim.byWorkload`, `WorkloadPlan.byWorkload`). Use `Watches(..., EnqueueRequestsFromMapFunc(byIndex))`.
 * **Cache**: Read via the cached client by default. Use `APIReader` only when strict consistency is required.
 * **Concurrency**: Start with `MaxConcurrentReconciles=1` (tune later).
-* **Requeue**: Requeue on external waits (Resolver/Runtime) and on `IsConflict`.
+* **Requeue**: Requeue on external waits (Provisioner/Runtime) and on `IsConflict`.
 * **Periodic resync**: Keep long (e.g., 1h) to reduce noise.
 
 ---

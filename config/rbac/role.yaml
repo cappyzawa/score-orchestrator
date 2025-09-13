@@ -28,10 +28,19 @@ rules:
   - score.dev
   resources:
   - resourceclaims/status
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - score.dev
+  resources:
   - workloads
   verbs:
   - get
   - list
+  - patch
+  - update
   - watch
 - apiGroups:
   - score.dev

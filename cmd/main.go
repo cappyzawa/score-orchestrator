@@ -23,6 +23,7 @@ import (
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
+	"k8s.io/client-go/kubernetes"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -36,6 +37,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	scorev1b1 "github.com/cappyzawa/score-orchestrator/api/v1b1"
+	"github.com/cappyzawa/score-orchestrator/internal/config"
 	"github.com/cappyzawa/score-orchestrator/internal/controller"
 	// +kubebuilder:scaffold:imports
 )
@@ -187,10 +189,21 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Create Kubernetes clientset for ConfigMapLoader
+	clientset, err := kubernetes.NewForConfig(mgr.GetConfig())
+	if err != nil {
+		setupLog.Error(err, "unable to create kubernetes clientset")
+		os.Exit(1)
+	}
+
+	// Create ConfigMapLoader with default options
+	configLoader := config.NewConfigMapLoader(clientset, config.DefaultLoaderOptions())
+
 	if err := (&controller.WorkloadReconciler{
-		Client:   mgr.GetClient(),
-		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("workload-controller"),
+		Client:       mgr.GetClient(),
+		Scheme:       mgr.GetScheme(),
+		Recorder:     mgr.GetEventRecorderFor("workload-controller"),
+		ConfigLoader: configLoader,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Workload")
 		os.Exit(1)
