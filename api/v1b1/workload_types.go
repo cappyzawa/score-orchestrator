@@ -196,7 +196,7 @@ type BindingSummary struct {
 
 	// Phase indicates the current phase of the binding
 	// +kubebuilder:validation:Enum=Pending;Binding;Bound;Failed
-	Phase ResourceBindingPhase `json:"phase"`
+	Phase ResourceClaimPhase `json:"phase"`
 
 	// Reason provides a programmatic identifier for the binding status
 	// +optional
@@ -221,7 +221,7 @@ type WorkloadStatus struct {
 	// Conditions represent the current state of the Workload resource.
 	// Standard condition types:
 	// - "Ready": the workload is fully functional
-	// - "BindingsReady": all resource bindings are ready
+	// - "ClaimsReady": all resource claims are ready
 	// - "RuntimeReady": runtime environment is ready
 	// - "InputsValid": spec validation passed
 	// +listType=map

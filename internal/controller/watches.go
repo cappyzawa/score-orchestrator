@@ -30,16 +30,16 @@ import (
 )
 
 // EnqueueRequestForOwningWorkload returns a handler that enqueues the owner Workload
-// for ResourceBinding and WorkloadPlan changes
+// for ResourceClaim and WorkloadPlan changes
 func EnqueueRequestForOwningWorkload() handler.EventHandler {
 	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
-		// Try ResourceBinding first
-		if binding, ok := obj.(*scorev1b1.ResourceBinding); ok {
+		// Try ResourceClaim first
+		if claim, ok := obj.(*scorev1b1.ResourceClaim); ok {
 			return []reconcile.Request{
 				{
 					NamespacedName: types.NamespacedName{
-						Name:      binding.Spec.WorkloadRef.Name,
-						Namespace: binding.Spec.WorkloadRef.Namespace,
+						Name:      claim.Spec.WorkloadRef.Name,
+						Namespace: claim.Spec.WorkloadRef.Namespace,
 					},
 				},
 			}
@@ -62,37 +62,37 @@ func EnqueueRequestForOwningWorkload() handler.EventHandler {
 	})
 }
 
-// GetResourceBindingsForWorkload retrieves all ResourceBindings for a given Workload
-func GetResourceBindingsForWorkload(ctx context.Context, c client.Client, workload *scorev1b1.Workload) ([]scorev1b1.ResourceBinding, error) {
-	bindingList := &scorev1b1.ResourceBindingList{}
+// GetResourceClaimsForWorkload retrieves all ResourceClaims for a given Workload
+func GetResourceClaimsForWorkload(ctx context.Context, c client.Client, workload *scorev1b1.Workload) ([]scorev1b1.ResourceClaim, error) {
+	claimList := &scorev1b1.ResourceClaimList{}
 	key := fmt.Sprintf("%s/%s", workload.Namespace, workload.Name)
 
 	// Try using indexer first, fallback to label selector for tests
-	err := c.List(ctx, bindingList, client.MatchingFields{meta.IndexResourceBindingByWorkload: key})
-	if err != nil && err.Error() == "field label not supported: resourcebinding.workloadRef" {
+	err := c.List(ctx, claimList, client.MatchingFields{meta.IndexResourceClaimByWorkload: key})
+	if err != nil && err.Error() == "field label not supported: resourceclaim.workloadRef" {
 		// Fallback: use label selector when indexer is not available (e.g., in tests)
-		return getResourceBindingsWithoutIndex(ctx, c, workload)
+		return getResourceClaimsWithoutIndex(ctx, c, workload)
 	}
 	if err != nil {
 		return nil, err
 	}
 
-	return bindingList.Items, nil
+	return claimList.Items, nil
 }
 
-// getResourceBindingsWithoutIndex retrieves ResourceBindings using owner reference or labels
-func getResourceBindingsWithoutIndex(ctx context.Context, c client.Client, workload *scorev1b1.Workload) ([]scorev1b1.ResourceBinding, error) {
-	bindingList := &scorev1b1.ResourceBindingList{}
+// getResourceClaimsWithoutIndex retrieves ResourceClaims using owner reference or labels
+func getResourceClaimsWithoutIndex(ctx context.Context, c client.Client, workload *scorev1b1.Workload) ([]scorev1b1.ResourceClaim, error) {
+	claimList := &scorev1b1.ResourceClaimList{}
 
-	// Use label selector to find bindings for this workload
-	err := c.List(ctx, bindingList,
+	// Use label selector to find claims for this workload
+	err := c.List(ctx, claimList,
 		client.InNamespace(workload.Namespace),
 		client.MatchingLabels{"score.dev/workload": workload.Name})
 	if err != nil {
 		return nil, err
 	}
 
-	return bindingList.Items, nil
+	return claimList.Items, nil
 }
 
 // GetWorkloadPlanForWorkload retrieves the WorkloadPlan for a given Workload

@@ -25,7 +25,7 @@ import (
 // Condition Types
 const (
 	ConditionReady         = "Ready"
-	ConditionBindingsReady = "BindingsReady"
+	ConditionBindingsReady = "ClaimsReady"
 	ConditionRuntimeReady  = "RuntimeReady"
 	ConditionInputsValid   = "InputsValid"
 )
@@ -50,14 +50,14 @@ const (
 const (
 	MessageSpecValidationFailed      = "Workload specification validation failed"
 	MessageSpecValidationPending     = "Workload specification validation pending"
-	MessageBindingsNotReady          = "Resource bindings are not ready"
-	MessageBindingsProvisioning      = "Resource bindings are being provisioned"
+	MessageClaimsNotReady            = "Resource claims are not ready"
+	MessageClaimsProvisioning        = "Resource claims are being provisioned"
 	MessageRuntimeProvisioningFailed = "Runtime provisioning failed"
 	MessageRuntimeProvisioning       = "Runtime is being provisioned"
 	MessageWorkloadReady             = "Workload is ready and operational"
-	MessageAllBindingsReady          = "All resource bindings are ready"
-	MessageBindingsFailed            = "One or more resource bindings have failed"
-	MessageNoBindingsFound           = "No resource bindings found"
+	MessageAllClaimsReady            = "All resource claims are ready"
+	MessageClaimsFailed              = "One or more resource claims have failed"
+	MessageNoClaimsFound             = "No resource claims found"
 )
 
 // SetCondition updates a condition in the conditions slice
@@ -111,10 +111,10 @@ func GetCondition(conditions []metav1.Condition, conditionType string) *metav1.C
 }
 
 // ComputeReadyCondition determines the Ready condition based on other conditions
-// Ready = InputsValid ∧ BindingsReady ∧ RuntimeReady
+// Ready = InputsValid ∧ ClaimsReady ∧ RuntimeReady
 func ComputeReadyCondition(conditions []metav1.Condition) (metav1.ConditionStatus, string, string) {
 	inputsValid := IsConditionTrue(conditions, ConditionInputsValid)
-	bindingsReady := IsConditionTrue(conditions, ConditionBindingsReady)
+	claimsReady := IsConditionTrue(conditions, ConditionBindingsReady)
 	runtimeReady := IsConditionTrue(conditions, ConditionRuntimeReady)
 
 	if !inputsValid {
@@ -125,12 +125,12 @@ func ComputeReadyCondition(conditions []metav1.Condition) (metav1.ConditionStatu
 		return metav1.ConditionFalse, ReasonSpecInvalid, MessageSpecValidationPending
 	}
 
-	if !bindingsReady {
-		bindingsCond := GetCondition(conditions, ConditionBindingsReady)
-		if bindingsCond != nil && bindingsCond.Status == metav1.ConditionFalse {
-			return metav1.ConditionFalse, bindingsCond.Reason, MessageBindingsNotReady
+	if !claimsReady {
+		claimsCond := GetCondition(conditions, ConditionBindingsReady)
+		if claimsCond != nil && claimsCond.Status == metav1.ConditionFalse {
+			return metav1.ConditionFalse, claimsCond.Reason, MessageClaimsNotReady
 		}
-		return metav1.ConditionFalse, ReasonBindingPending, MessageBindingsProvisioning
+		return metav1.ConditionFalse, ReasonBindingPending, MessageClaimsProvisioning
 	}
 
 	if !runtimeReady {

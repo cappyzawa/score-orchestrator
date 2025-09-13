@@ -11,17 +11,17 @@ metadata:
   labels:
     app.kubernetes.io/name: kbinit
     app.kubernetes.io/managed-by: kustomize
-  name: platformpolicy-admin-role
+  name: resourceclaim-admin-role
 rules:
 - apiGroups:
   - score.dev
   resources:
-  - platformpolicies
+  - resourceclaims
   verbs:
   - '*'
 - apiGroups:
   - score.dev
   resources:
-  - platformpolicies/status
+  - resourceclaims/status
   verbs:
   - get

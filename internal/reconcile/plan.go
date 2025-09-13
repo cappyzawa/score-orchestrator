@@ -31,7 +31,7 @@ import (
 )
 
 // UpsertWorkloadPlan creates or updates the WorkloadPlan for the given Workload
-func UpsertWorkloadPlan(ctx context.Context, c client.Client, workload *scorev1b1.Workload, bindings []scorev1b1.ResourceBinding, runtimeClass string) error {
+func UpsertWorkloadPlan(ctx context.Context, c client.Client, workload *scorev1b1.Workload, claims []scorev1b1.ResourceClaim, runtimeClass string) error {
 	planName := workload.Name // Same name as Workload
 	plan := &scorev1b1.WorkloadPlan{}
 
@@ -53,8 +53,8 @@ func UpsertWorkloadPlan(ctx context.Context, c client.Client, workload *scorev1b
 		},
 		ObservedWorkloadGeneration: workload.Generation,
 		RuntimeClass:               runtimeClass,
-		Projection:                 buildProjection(workload, bindings),
-		Bindings:                   buildPlanBindings(bindings),
+		Projection:                 buildProjection(workload, claims),
+		Bindings:                   buildPlanBindings(claims),
 	}
 
 	if errors.IsNotFound(err) {
@@ -110,20 +110,20 @@ func UpsertWorkloadPlan(ctx context.Context, c client.Client, workload *scorev1b
 }
 
 // buildProjection creates the projection rules for injecting binding outputs
-func buildProjection(_ *scorev1b1.Workload, bindings []scorev1b1.ResourceBinding) scorev1b1.WorkloadProjection {
+func buildProjection(_ *scorev1b1.Workload, claims []scorev1b1.ResourceClaim) scorev1b1.WorkloadProjection {
 	projection := scorev1b1.WorkloadProjection{}
 
 	// Build environment variable mappings
 	// This is a simplified projection - real implementation would need more sophisticated logic
-	for _, binding := range bindings {
-		if binding.Status.OutputsAvailable {
+	for _, claim := range claims {
+		if claim.Status.OutputsAvailable {
 			// Create common environment variable mappings
 			// This is MVP implementation - more sophisticated mapping would be configurable
-			envVar := fmt.Sprintf("%s_URI", strings.ToUpper(binding.Spec.Key))
+			envVar := fmt.Sprintf("%s_URI", strings.ToUpper(claim.Spec.Key))
 			projection.Env = append(projection.Env, scorev1b1.EnvMapping{
 				Name: envVar,
 				From: scorev1b1.FromBindingOutput{
-					BindingKey: binding.Spec.Key,
+					BindingKey: claim.Spec.Key,
 					OutputKey:  "uri", // Common output key
 				},
 			})
@@ -134,17 +134,17 @@ func buildProjection(_ *scorev1b1.Workload, bindings []scorev1b1.ResourceBinding
 }
 
 // buildPlanBindings creates the binding requirements for the runtime
-func buildPlanBindings(bindings []scorev1b1.ResourceBinding) []scorev1b1.PlanBinding {
-	planBindings := make([]scorev1b1.PlanBinding, 0, len(bindings))
+func buildPlanBindings(claims []scorev1b1.ResourceClaim) []scorev1b1.PlanBinding {
+	planBindings := make([]scorev1b1.PlanBinding, 0, len(claims))
 
-	for _, binding := range bindings {
+	for _, claim := range claims {
 		planBinding := scorev1b1.PlanBinding{
-			Key:  binding.Spec.Key,
-			Type: binding.Spec.Type,
+			Key:  claim.Spec.Key,
+			Type: claim.Spec.Type,
 		}
 
-		if binding.Spec.Class != nil {
-			planBinding.Class = binding.Spec.Class
+		if claim.Spec.Class != nil {
+			planBinding.Class = claim.Spec.Class
 		}
 
 		planBindings = append(planBindings, planBinding)

@@ -25,12 +25,9 @@ resources:
 - workloadplan_admin_role.yaml
 - workloadplan_editor_role.yaml
 - workloadplan_viewer_role.yaml
-- resourcebinding_admin_role.yaml
-- resourcebinding_editor_role.yaml
-- resourcebinding_viewer_role.yaml
-- platformpolicy_admin_role.yaml
-- platformpolicy_editor_role.yaml
-- platformpolicy_viewer_role.yaml
+- resourceclaim_admin_role.yaml
+- resourceclaim_editor_role.yaml
+- resourceclaim_viewer_role.yaml
 - workload_admin_role.yaml
 - workload_editor_role.yaml
 - workload_viewer_role.yaml
