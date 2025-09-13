@@ -6,8 +6,9 @@ The public contract is intentionally minimal and runtime-agnostic. Internal reso
 - **API Group/Version:** `score.dev/v1b1`
 - **Kinds (no "Score" prefix):**
   - Public (user-facing): `Workload`
-  - PF-facing (hidden from users): `PlatformPolicy`
   - Internal (platform-facing): `ResourceBinding`, `WorkloadPlan`
+
+Policy and profile/backends mapping live in an **Orchestrator configuration** artifact (ConfigMap or OCI), not a public CRD.
 
 See also: [`rbac.md`](rbac.md), [`control-plane.md`](control-plane.md), [`lifecycle.md`](lifecycle.md), [`validation.md`](validation.md).
 
@@ -18,12 +19,9 @@ See also: [`rbac.md`](rbac.md), [`control-plane.md`](control-plane.md), [`lifecy
 ### Public APIs (User-facing)
 - **`Workload`** — The only resource users author and read.
 
-### PF-facing (hidden from users via RBAC)
-- **`PlatformPolicy`** — Platform-applied governance and defaults (cluster-scoped). No list/get/watch for tenants.
-
 ### Internal APIs (Platform-facing)
-- **`ResourceBinding`** — Contract with resolvers for dependency provisioning.  
-  Spec is created/updated by the Orchestrator; **status is written by Resolvers**.
+- **`ResourceBinding`** — Contract with **provisioners** for dependency provisioning.
+  Spec is created/updated by the Orchestrator; **status is written by Provisioners**.
 - **`WorkloadPlan`** — Orchestrator-to-Runtime projection plan (single writer: Orchestrator).  
   Same name/namespace as the target `Workload` (OwnerRef set). Hidden from users.
 
@@ -93,7 +91,7 @@ Runtime selection and platform details are **not** part of this spec.
 - `metadata` (optional): object (labels/hints; non-functional)
 
 ### Out of scope (MUST NOT appear in `spec`)
-- **`runtime` / `runtimeClass`** — runtime selection belongs to **`PlatformPolicy`**.
+- **`runtime` / `runtimeClass`** — runtime selection belongs to **the Orchestrator configuration + Admission** (not part of this API).
 - **`specRef` / `configMapRef` / `template` / `includes`** — indirection/composition is **not part of this API**.  
   Use upstream tooling (Helm/Kustomize) before submitting the CR.
 
@@ -112,39 +110,31 @@ Runtime selection and platform details are **not** part of this spec.
   `key`, `phase (Pending|Binding|Bound|Failed)`, `reason`, `message`, `outputsAvailable: bool`
 - **Readiness rule:** `InputsValid=True AND BindingsReady=True AND RuntimeReady=True`
 
----
+### Orchestrator configuration (non-CRD, conceptual)
 
-## PlatformPolicy (`score.dev/v1b1`) — PF-facing (hidden from users)
+A single **orchestrator config** (ConfigMap or OCI document) becomes the source of truth for platform mapping:
 
-### Purpose
-PF operators declare how `Workload` should be materialized: runtime class selection, defaults, and resolver routing.  
-Tenants do not read or write this resource.
+* `profiles[]` — abstract profile entries (e.g., `web-service`, `batch-job`, `event-consumer`, `function`), each mapping to one or more **backend candidates**:
+  * `backendId` (stable identifier, not user-visible)
+  * `runtimeClass` (e.g., `kubernetes`, `ecs`, `nomad`)
+  * `template` { `kind`: `manifests` | `helm` | `…`, `ref`: immutable reference (OCI digest recommended) }
+  * `priority` / `version` / `constraints` (selectors by namespace/labels/region; feature requirements like `scale-to-zero`)
+* `provisioners[]` — dependency realization definitions aligned with Score resources.
+* `defaults` — profile defaults by selector (namespace/labels), plus a global default.
 
-### Scope & Visibility
-- **Cluster-scoped** (recommended). Hidden from users (no list/get/watch).
-
-### Spec (conceptual)
-- **Targeting**: label/namespace selectors to scope the policy to certain Workloads
-- **Runtime class**: abstract runtime class to use (e.g., `kubernetes`, `ecs`, `nomad`)
-- **Defaults**: platform-level defaults (e.g., replica policy, exposure patterns) within the abstract model
-- **Resolver routing**: mapping from `ResourceRequest.type` → resolver class/config
-- **Projection defaults**: default env/volume mapping rules if not specified by plan generation
-- **Endpoint policy**: how to derive a single canonical endpoint (e.g., host/path templates)
-
-> Implementation details are platform-specific and must not leak to users.  
-> The Orchestrator interprets this policy; it is not directly visible in `Workload.status`.
+Templates are declarative (no embedded functions) and should use immutable refs (OCI digest recommended).
 
 ---
 
-## ResourceBinding (`score.dev/v1b1`) — Internal (contract with resolvers)
+## ResourceBinding (aka ResourceClaim) (`score.dev/v1b1`) — Internal (contract with provisioners)
 
 ### Purpose
-Represents an abstract dependency request derived from a `Workload`.  
-Resolvers watch this resource, provision/bind concrete services, and publish outputs.
+Represents an abstract dependency request derived from a `Workload`.
+Provisioners watch this resource, provision/bind concrete services, and publish outputs.
 
 ### Ownership & Visibility
 - Created/updated (spec) by the **Orchestrator**; OwnerRef points to the Workload.
-- **Hidden from users** via RBAC. Resolvers and runtime may read it.
+- **Hidden from users** via RBAC. Provisioners and runtime may read it.
 
 #### Required/Optional Summary
 
@@ -180,7 +170,7 @@ Resolvers watch this resource, provision/bind concrete services, and publish out
 - `deprovisionPolicy` (optional): Enum { **Delete**, **Retain**, **Orphan** }.
   Defines how provisioned resources are handled when the binding is removed.
 
-### Status (written by Resolvers)
+### Status (written by Provisioners)
 - **`phase`**: `Pending → Binding → (Bound | Failed)` (may re-enter on reconcile)
 - **`reason` / `message`**: short, neutral text (no runtime-specific nouns)
 - **`outputs` (standardized)**: Shape:
@@ -201,7 +191,7 @@ Resolvers watch this resource, provision/bind concrete services, and publish out
     ```
     has(self.secretRef) || has(self.configMapRef) || has(self.uri) || has(self.image) || has(self.cert)
     ```
-- `outputsAvailable: bool` MUST be `true` iff the resolver has published a valid `outputs`
+- `outputsAvailable: bool` MUST be `true` iff the provisioner has published a valid `outputs`
   object (i.e., the CEL condition evaluates to true).
 - `observedGeneration`, `lastTransitionTime`
 
@@ -260,7 +250,7 @@ For example, `imageFrom: { bindingKey, outputKey }` may be used to bind an `outp
 
 - **Succeeded** — all requirements satisfied and materialized.
 - **SpecInvalid** — schema/CEL violations or unresolved references.
-- **PolicyViolation** — violates `PlatformPolicy`.
+- **PolicyViolation** — violates platform policy (Orchestrator config + Admission).
 - **BindingPending** — dependency provisioning in progress.
 - **BindingFailed** — dependency provisioning failed.
 - **ProjectionError** — plan requires outputs that are missing/mismatched.
@@ -282,7 +272,6 @@ Fields that intentionally carry arbitrary JSON **MUST** use the Kubernetes type
 Do not use `interface{}` / `any` / `runtime.RawExtension` for these fields.
 
 Affected fields:
-- `PlatformPolicy.spec.resolverRouting[*].params`
 - `ResourceBinding.spec.params`
 - `WorkloadPlan.spec.bindings[].params`
 
@@ -293,7 +282,7 @@ Affected fields:
 - **Status subresource:** CRDs expose `status` as a subresource.  
 - **Status authorship (Single-writer principle):**  
   - `Workload.status`: written **only** by the Orchestrator.
-  - `ResourceBinding.status`: written **only** by Resolver implementations.
+  - `ResourceBinding.status`: written **only** by Provisioner implementations.
   - `WorkloadPlan`: no `.status`. Runtime controllers **must not** write to `Workload.status`;
     they publish detailed diagnostics to their **own** internal resources.
   

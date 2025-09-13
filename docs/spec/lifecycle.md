@@ -9,11 +9,11 @@ The Score Orchestrator manages workloads through a well-defined lifecycle with c
 ```
 User applies Workload 
     ↓
-Orchestrator validates and applies PlatformPolicy
+Orchestrator reads **Orchestrator Config** and Admission (policy)
     ↓  
 Orchestrator generates ResourceBinding resources
     ↓
-Resolver Controllers bind dependencies and provide outputs
+Provisioner Controllers bind dependencies and provide outputs
     ↓
 Orchestrator generates WorkloadPlan with projection rules
     ↓
@@ -31,7 +31,7 @@ User submits a `Workload` resource via `kubectl apply` or equivalent API call.
 
 ### Orchestrator Response
 1. **Input Validation**: CRD-level validation (OpenAPI + CEL) ensures specification compliance
-2. **Policy Application**: Matches applicable `PlatformPolicy` resources based on selectors
+2. **Policy Application**: Reads **Orchestrator Config** (ConfigMap/OCI) and applies Admission rules
 3. **Status Initialization**: Sets initial conditions:
    - `InputsValid=Unknown` (validation in progress)
    - `BindingsReady=False` (no bindings created yet)  
@@ -46,11 +46,13 @@ User submits a `Workload` resource via `kubectl apply` or equivalent API call.
 ## Phase 2: Dependency Resolution
 
 ### Orchestrator Actions
+The orchestrator selects an **abstract profile** (auto; optional abstract hint) and a **backend** deterministically (priority→version→name) before plan generation.
+
 1. **Resource Analysis**: Parse `spec.resources` to identify required dependencies
 2. **ResourceBinding Generation**: Create `ResourceBinding` resources for each dependency:
    - Set appropriate `spec.type`, `spec.class`, and `spec.params`
    - Establish OwnerReference to parent Workload
-   - Select appropriate `spec.provisioner` based on platform configuration
+   - Select appropriate provisioner based on Orchestrator configuration
 
 ### ResourceBinding Lifecycle
 Each `ResourceBinding` follows its own state progression:
@@ -67,12 +69,12 @@ Pending → Binding → Bound (success)
 - **Orchestrator Status**: Updates `Workload.status.bindings[].phase=Pending`
 
 #### Binding Phase  
-- **Trigger**: Resolver Controller begins provisioning the resource
+- **Trigger**: Provisioner Controller begins provisioning the resource
 - **State**: Active provisioning of the required dependency
 - **Orchestrator Status**: Updates `Workload.status.bindings[].phase=Binding`
 
 #### Bound Phase (Success)
-- **Trigger**: Resolver Controller successfully provisions resource and populates `status.outputs`
+- **Trigger**: Provisioner Controller successfully provisions resource and populates `status.outputs`
 - **State**: Resource ready for consumption, outputs available
 - **Orchestrator Status**: 
   - Updates `Workload.status.bindings[].phase=Bound`
@@ -80,7 +82,7 @@ Pending → Binding → Bound (success)
   - If all bindings are Bound, sets `BindingsReady=True`
 
 #### Failed Phase (Error)
-- **Trigger**: Resolver Controller encounters unrecoverable error
+- **Trigger**: Provisioner Controller encounters unrecoverable error
 - **State**: Resource provisioning failed, outputs unavailable  
 - **Orchestrator Status**:
   - Updates `Workload.status.bindings[].phase=Failed`
@@ -110,11 +112,14 @@ The Orchestrator sets `BindingsReady=True` when:
          outputKey: "connectionString"
    ```
 
-2. **WorkloadPlan Creation**: Generate comprehensive execution plan:
+2. **WorkloadPlan Creation**: Generate comprehensive execution plan with:
+   - **Values precedence**: **`defaults ⊕ normalize(Workload) ⊕ outputs`** (right-hand wins)
    - **Container Projections**: Environment variables, volume mounts, file injections
    - **Service Configuration**: Port mappings, ingress rules, network policies
    - **Binding Dependencies**: Required outputs and criticality indicators
    - **Runtime Metadata**: Labels, annotations, ownership mode
+
+   Note: `${resources.*}` resolution occurs **after Provision completion** (unresolved placeholders result in `ProjectionError`)
 
 3. **Plan Validation**: Ensure plan completeness and consistency
 
@@ -186,7 +191,7 @@ The `status.endpoint` field follows this update sequence:
 
 The Orchestrator determines the canonical endpoint using the following priority:
 
-1. **PlatformPolicy Template**: If policy specifies endpoint template pattern
+1. **Orchestrator Config template**: If config specifies endpoint template pattern
 2. **Service Port Names**: Prefer ports named `web`, `http`, `https`, or `main`
 3. **Single Port**: If only one port is exposed, use that port
 4. **Platform Defaults**: Runtime-specific selection (external ingress > load balancer > nodeport > clusterip)
@@ -214,7 +219,7 @@ Only **one endpoint** is exposed in `status.endpoint` to maintain interface simp
 ### Recovery Mechanisms
 
 #### Automatic Recovery
-- ResourceBinding Controllers retry failed bindings with exponential backoff
+- Provisioner Controllers retry failed bindings with exponential backoff
 - Runtime Controllers automatically reconcile platform resource drift
 - Network partitions trigger re-evaluation of dependent resource status
 
@@ -292,7 +297,7 @@ kubectl get events --field-selector involvedObject.kind=Workload
 
 - If `containers.*.image != "."`, the value is treated as a concrete OCI reference.
 - If `containers.*.image == "."`, the Orchestrator expects an image to be supplied at deploy time:
-  - Typically via a `ResourceBinding` of type `image|build|buildpack` resolved by a Resolver that builds and pushes an image.
+  - Typically via a `ResourceBinding` of type `image|build|buildpack` resolved by a Provisioner that builds and pushes an image.
   - The `WorkloadPlan` carries a projection such as:
     - `containers[].imageFrom: { bindingKey, outputKey: "image" }`
   - The Runtime consumes the plan plus binding outputs to set the final image used for execution.
@@ -301,6 +306,6 @@ kubectl get events --field-selector involvedObject.kind=Workload
 
 - Runtime determines an endpoint (if any) based on the chosen platform.
 - Orchestrator reflects that value into `Workload.status.endpoint`.
-- Only the Orchestrator updates `Workload.status`. Runtimes and Resolvers do not write there.
+- Only the Orchestrator updates `Workload.status`. Runtimes and Provisioners do not write there.
 
 This lifecycle ensures that users have a simple, consistent interface while platforms maintain full control over resource provisioning and workload execution across diverse runtime environments.

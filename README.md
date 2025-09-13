@@ -8,7 +8,7 @@ Score defines a portable way to describe applications. This project provides a s
 ## What this project is
 - A reference **orchestrator** built around Kubernetes CRDs (group/version: `score.dev/v1b1`)
 - Public API surface: **`Workload`** only
-- Internal contracts for platform use: `ResourceBinding`, `WorkloadPlan`; PF-facing `PlatformPolicy`
+- Internal contracts for platform use: `ResourceBinding`, `WorkloadPlan`
 - Status is abstract and user-centric (a single `endpoint`, abstract `conditions`, binding summaries)
 - Validation boundary: **CRD OpenAPI + CEL** for spec invariants; org policy via **VAP/OPA/Kyverno**
 
