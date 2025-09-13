@@ -1,3 +1,4 @@
+# Test Case 1: Auto-derivation - web service (has service ports)
 apiVersion: score.dev/v1b1
 kind: Workload
 metadata:
@@ -7,10 +8,39 @@ metadata:
   name: workload-sample
   namespace: score-system
 spec:
-  profile: web-service
   containers:
     app:
       image: nginx:latest
+  service:
+    ports:
+    - port: 8080
   resources:
     db:
       type: postgres
+---
+# Test Case 2: Selector matching - batch workload
+apiVersion: score.dev/v1b1
+kind: Workload
+metadata:
+  labels:
+    workload-type: batch
+  name: workload-batch
+  namespace: score-system
+spec:
+  containers:
+    worker:
+      image: busybox:latest
+      command: ["sleep", "3600"]
+---
+# Test Case 3: User hint - explicit profile annotation
+apiVersion: score.dev/v1b1
+kind: Workload
+metadata:
+  annotations:
+    score.dev/profile: "batch-job"
+  name: workload-user-hint
+  namespace: score-system
+spec:
+  containers:
+    app:
+      image: nginx:latest
