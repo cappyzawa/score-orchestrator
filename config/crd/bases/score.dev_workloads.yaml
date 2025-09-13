@@ -196,6 +196,11 @@ spec:
                 maxProperties: 10
                 minProperties: 1
                 type: object
+              profile:
+                description: |-
+                  Profile specifies which orchestrator profile to use for this workload
+                  If not specified, the default profile from orchestrator config will be used
+                type: string
               resources:
                 additionalProperties:
                   description: ResourceSpec defines an external resource dependency

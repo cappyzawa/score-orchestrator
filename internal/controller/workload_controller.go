@@ -30,6 +30,7 @@ import (
 
 	scorev1b1 "github.com/cappyzawa/score-orchestrator/api/v1b1"
 	"github.com/cappyzawa/score-orchestrator/internal/conditions"
+	"github.com/cappyzawa/score-orchestrator/internal/config"
 	"github.com/cappyzawa/score-orchestrator/internal/meta"
 	"github.com/cappyzawa/score-orchestrator/internal/reconcile"
 	"github.com/cappyzawa/score-orchestrator/internal/status"
@@ -38,11 +39,12 @@ import (
 // WorkloadReconciler reconciles a Workload object
 type WorkloadReconciler struct {
 	client.Client
-	Scheme   *runtime.Scheme
-	Recorder record.EventRecorder
+	Scheme       *runtime.Scheme
+	Recorder     record.EventRecorder
+	ConfigLoader config.ConfigLoader
 }
 
-// +kubebuilder:rbac:groups=score.dev,resources=workloads,verbs=get;list;watch
+// +kubebuilder:rbac:groups=score.dev,resources=workloads,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups=score.dev,resources=workloads/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=score.dev,resources=workloads/finalizers,verbs=update
 // +kubebuilder:rbac:groups=score.dev,resources=resourceclaims;workloadplans,verbs=get;list;watch;create;update;patch;delete
@@ -173,9 +175,58 @@ func (r *WorkloadReconciler) validateInputsAndPolicy(_ context.Context, workload
 // determineRuntimeClass determines the runtime class for the workload
 // ADR-0003: Runtime selection is now based on Orchestrator Config profiles
 func (r *WorkloadReconciler) determineRuntimeClass(ctx context.Context, workload *scorev1b1.Workload) string {
-	// TODO: Implement profile-based runtime selection from Orchestrator Config
-	// For MVP, return default runtime class
-	return meta.RuntimeClassKubernetes
+	log := ctrl.LoggerFrom(ctx)
+
+	// Load Orchestrator Configuration
+	orchestratorConfig, err := r.ConfigLoader.LoadConfig(ctx)
+	if err != nil {
+		log.Error(err, "Failed to load orchestrator config, using default runtime")
+		return meta.RuntimeClassKubernetes
+	}
+
+	// Determine profile name (from workload.spec.profile or defaults.profile)
+	profileName := ""
+	if workload.Spec.Profile != nil {
+		profileName = *workload.Spec.Profile
+	} else if orchestratorConfig.Spec.Defaults.Profile != "" {
+		profileName = orchestratorConfig.Spec.Defaults.Profile
+	}
+
+	if profileName == "" {
+		log.Info("No profile specified and no default profile configured, using default runtime")
+		return meta.RuntimeClassKubernetes
+	}
+
+	// Find the profile
+	var selectedProfile *scorev1b1.ProfileSpec
+	for _, profile := range orchestratorConfig.Spec.Profiles {
+		if profile.Name == profileName {
+			selectedProfile = &profile
+			break
+		}
+	}
+
+	if selectedProfile == nil {
+		log.Error(nil, "Specified profile not found in config", "profile", profileName)
+		return meta.RuntimeClassKubernetes
+	}
+
+	// Select backend from profile (use highest priority backend)
+	if len(selectedProfile.Backends) == 0 {
+		log.Error(nil, "Profile has no backends configured", "profile", profileName)
+		return meta.RuntimeClassKubernetes
+	}
+
+	// Sort backends by priority (highest first) and select the first one
+	selectedBackend := selectedProfile.Backends[0]
+	for _, backend := range selectedProfile.Backends {
+		if backend.Priority > selectedBackend.Priority {
+			selectedBackend = backend
+		}
+	}
+
+	log.Info("Selected backend for workload", "profile", profileName, "backend", selectedBackend.BackendId, "runtime", selectedBackend.RuntimeClass)
+	return selectedBackend.RuntimeClass
 }
 
 // updateRuntimeStatus updates RuntimeReady condition and endpoint (MVP implementation)

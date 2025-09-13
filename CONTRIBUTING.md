@@ -325,7 +325,7 @@ Brief document description and scope.
 
 ### Next Phases
 - **CRD Implementation**: OpenAPI schemas with CEL validation
-- **Controller Development**: Orchestrator, Runtime, and Resolver controllers
+- **Controller Development**: Orchestrator, Runtime, and Provisioner controllers
 - **Integration Testing**: End-to-end workflow validation
 - **Platform Support**: Kubernetes, ECS, and Nomad runtime implementations
 - **Conformance Testing**: Platform certification and compatibility

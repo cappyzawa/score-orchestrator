@@ -21,7 +21,7 @@ spec:
       openAPIV3Schema:
         description: |-
           ResourceClaim represents a single resource dependency resolution contract.
-          Resolvers drive it to Bound and publish standardized outputs for consumption by runtimes.
+          Provisioners drive it to Bound and publish standardized outputs for consumption by runtimes.
         properties:
           apiVersion:
             description: |-

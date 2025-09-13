@@ -5,5 +5,12 @@ metadata:
     app.kubernetes.io/name: kbinit
     app.kubernetes.io/managed-by: kustomize
   name: workload-sample
+  namespace: score-system
 spec:
-  # TODO(user): Add fields here
+  profile: web-service
+  containers:
+    app:
+      image: nginx:latest
+  resources:
+    db:
+      type: postgres

@@ -25,7 +25,7 @@ import (
 // +kubebuilder:resource:scope=Namespaced,shortName=rc
 // +kubebuilder:subresource:status
 // ResourceClaim represents a single resource dependency resolution contract.
-// Resolvers drive it to Bound and publish standardized outputs for consumption by runtimes.
+// Provisioners drive it to Bound and publish standardized outputs for consumption by runtimes.
 type ResourceClaim struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

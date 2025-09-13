@@ -26,6 +26,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -34,6 +35,7 @@ import (
 
 	scorev1b1 "github.com/cappyzawa/score-orchestrator/api/v1b1"
 	"github.com/cappyzawa/score-orchestrator/internal/conditions"
+	"github.com/cappyzawa/score-orchestrator/internal/config"
 	"github.com/cappyzawa/score-orchestrator/internal/meta"
 	internalreconcile "github.com/cappyzawa/score-orchestrator/internal/reconcile"
 )
@@ -105,11 +107,17 @@ var _ = Describe("Workload Controller", func() {
 			Expect(fi.IndexField(mgrCtx, &scorev1b1.ResourceClaim{}, meta.IndexResourceClaimByWorkload, indexResourceClaimByWorkload)).To(Succeed())
 			Expect(fi.IndexField(mgrCtx, &scorev1b1.WorkloadPlan{}, meta.IndexWorkloadPlanByWorkload, indexWorkloadPlanByWorkload)).To(Succeed())
 
-			// 4) Setup WorkloadReconciler with unique name for this test
+			// 4) Create ConfigLoader for testing
+			clientset, err := kubernetes.NewForConfig(cfg)
+			Expect(err).NotTo(HaveOccurred())
+			configLoader := config.NewConfigMapLoader(clientset, config.DefaultLoaderOptions())
+
+			// 5) Setup WorkloadReconciler with unique name for this test
 			reconciler := &WorkloadReconciler{
-				Client:   mgr.GetClient(),
-				Scheme:   mgr.GetScheme(),
-				Recorder: mgr.GetEventRecorderFor("workload-controller-test-" + testNS.Name),
+				Client:       mgr.GetClient(),
+				Scheme:       mgr.GetScheme(),
+				Recorder:     mgr.GetEventRecorderFor("workload-controller-test-" + testNS.Name),
+				ConfigLoader: configLoader,
 			}
 			// Setup controller directly with unique name to avoid conflicts between tests
 			err = ctrl.NewControllerManagedBy(mgr).
@@ -122,7 +130,7 @@ var _ = Describe("Workload Controller", func() {
 				Complete(reconciler)
 			Expect(err).NotTo(HaveOccurred())
 
-			// 5) Start manager and wait for cache sync
+			// 6) Start manager and wait for cache sync
 			go func() {
 				defer close(doneCh)
 				defer GinkgoRecover()
@@ -133,7 +141,7 @@ var _ = Describe("Workload Controller", func() {
 
 			k8sCl = mgr.GetClient()
 
-			// 6) Create test workload with GenerateName
+			// 7) Create test workload with GenerateName
 			workload = &scorev1b1.Workload{
 				ObjectMeta: metav1.ObjectMeta{
 					GenerateName: "test-workload-",
