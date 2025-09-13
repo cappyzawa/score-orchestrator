@@ -31,64 +31,64 @@ type BindingAggregation struct {
 	Bindings []scorev1b1.BindingSummary
 }
 
-// AggregateBindingStatuses processes all ResourceBindings and returns aggregated status
-func AggregateBindingStatuses(bindings []scorev1b1.ResourceBinding) BindingAggregation {
-	if len(bindings) == 0 {
+// AggregateClaimStatuses processes all ResourceClaims and returns aggregated status
+func AggregateClaimStatuses(claims []scorev1b1.ResourceClaim) BindingAggregation {
+	if len(claims) == 0 {
 		return BindingAggregation{
 			Ready:    false,
 			Reason:   conditions.ReasonBindingPending,
-			Message:  conditions.MessageNoBindingsFound,
+			Message:  conditions.MessageNoClaimsFound,
 			Bindings: []scorev1b1.BindingSummary{},
 		}
 	}
 
-	summaries := make([]scorev1b1.BindingSummary, 0, len(bindings))
+	summaries := make([]scorev1b1.BindingSummary, 0, len(claims))
 	var boundCount, failedCount int
 
-	for _, binding := range bindings {
+	for _, claim := range claims {
 		summary := scorev1b1.BindingSummary{
-			Key:              binding.Spec.Key,
-			Phase:            binding.Status.Phase,
-			Reason:           binding.Status.Reason,
-			Message:          binding.Status.Message,
-			OutputsAvailable: binding.Status.OutputsAvailable,
+			Key:              claim.Spec.Key,
+			Phase:            claim.Status.Phase,
+			Reason:           claim.Status.Reason,
+			Message:          claim.Status.Message,
+			OutputsAvailable: claim.Status.OutputsAvailable,
 		}
 
 		// Handle empty phase as Pending
 		if summary.Phase == "" {
-			summary.Phase = scorev1b1.ResourceBindingPhasePending
+			summary.Phase = scorev1b1.ResourceClaimPhasePending
 		}
 
 		summaries = append(summaries, summary)
 
 		// Count phases for overall status
-		switch binding.Status.Phase {
-		case scorev1b1.ResourceBindingPhaseBound:
-			if binding.Status.OutputsAvailable {
+		switch claim.Status.Phase {
+		case scorev1b1.ResourceClaimPhaseBound:
+			if claim.Status.OutputsAvailable {
 				boundCount++
 			}
-		case scorev1b1.ResourceBindingPhaseFailed:
+		case scorev1b1.ResourceClaimPhaseFailed:
 			failedCount++
 		}
 	}
 
-	// Determine overall binding readiness
-	totalBindings := len(bindings)
+	// Determine overall claim readiness
+	totalClaims := len(claims)
 	var ready bool
 	var reason, message string
 
 	if failedCount > 0 {
 		ready = false
 		reason = conditions.ReasonBindingFailed
-		message = conditions.MessageBindingsFailed
-	} else if boundCount == totalBindings {
+		message = conditions.MessageClaimsFailed
+	} else if boundCount == totalClaims {
 		ready = true
 		reason = conditions.ReasonSucceeded
-		message = conditions.MessageAllBindingsReady
+		message = conditions.MessageAllClaimsReady
 	} else {
 		ready = false
 		reason = conditions.ReasonBindingPending
-		message = conditions.MessageBindingsProvisioning
+		message = conditions.MessageClaimsProvisioning
 	}
 
 	return BindingAggregation{
@@ -104,7 +104,7 @@ func UpdateWorkloadStatusFromAggregation(workload *scorev1b1.Workload, agg Bindi
 	// Update bindings summary
 	workload.Status.Bindings = agg.Bindings
 
-	// Update BindingsReady condition
+	// Update ClaimsReady condition
 	var status metav1.ConditionStatus
 	if agg.Ready {
 		status = metav1.ConditionTrue

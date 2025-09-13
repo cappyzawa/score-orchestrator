@@ -28,11 +28,11 @@ import (
 
 // SetupIndexers sets up the indexers for efficient lookups
 func SetupIndexers(ctx context.Context, mgr manager.Manager) error {
-	// Index ResourceBinding by workloadRef
-	if err := mgr.GetFieldIndexer().IndexField(ctx, &scorev1b1.ResourceBinding{}, meta.IndexResourceBindingByWorkload,
+	// Index ResourceClaim by workloadRef
+	if err := mgr.GetFieldIndexer().IndexField(ctx, &scorev1b1.ResourceClaim{}, meta.IndexResourceClaimByWorkload,
 		func(obj client.Object) []string {
-			binding := obj.(*scorev1b1.ResourceBinding)
-			return []string{binding.Spec.WorkloadRef.Namespace + "/" + binding.Spec.WorkloadRef.Name}
+			claim := obj.(*scorev1b1.ResourceClaim)
+			return []string{claim.Spec.WorkloadRef.Namespace + "/" + claim.Spec.WorkloadRef.Name}
 		},
 	); err != nil {
 		return err

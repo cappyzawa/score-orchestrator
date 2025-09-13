@@ -29,33 +29,33 @@ import (
 	scorev1b1 "github.com/cappyzawa/score-orchestrator/api/v1b1"
 )
 
-// UpsertResourceBindings creates or updates ResourceBinding resources for each resource in the Workload spec
-func UpsertResourceBindings(ctx context.Context, c client.Client, workload *scorev1b1.Workload) error {
+// UpsertResourceClaims creates or updates ResourceClaim resources for each resource in the Workload spec
+func UpsertResourceClaims(ctx context.Context, c client.Client, workload *scorev1b1.Workload) error {
 	for key, resource := range workload.Spec.Resources {
-		if err := upsertResourceBinding(ctx, c, workload, key, resource); err != nil {
-			return fmt.Errorf("failed to upsert ResourceBinding for key %q: %w", key, err)
+		if err := upsertResourceClaim(ctx, c, workload, key, resource); err != nil {
+			return fmt.Errorf("failed to upsert ResourceClaim for key %q: %w", key, err)
 		}
 	}
 	return nil
 }
 
-// upsertResourceBinding creates or updates a single ResourceBinding
-func upsertResourceBinding(ctx context.Context, c client.Client, workload *scorev1b1.Workload, key string, resource scorev1b1.ResourceSpec) error {
-	bindingName := fmt.Sprintf("%s-%s", workload.Name, key)
-	binding := &scorev1b1.ResourceBinding{}
+// upsertResourceClaim creates or updates a single ResourceClaim
+func upsertResourceClaim(ctx context.Context, c client.Client, workload *scorev1b1.Workload, key string, resource scorev1b1.ResourceSpec) error {
+	claimName := fmt.Sprintf("%s-%s", workload.Name, key)
+	claim := &scorev1b1.ResourceClaim{}
 
-	// Try to get existing binding
+	// Try to get existing claim
 	err := c.Get(ctx, types.NamespacedName{
-		Name:      bindingName,
+		Name:      claimName,
 		Namespace: workload.Namespace,
-	}, binding)
+	}, claim)
 
 	if err != nil && !errors.IsNotFound(err) {
-		return fmt.Errorf("failed to get ResourceBinding %s: %w", bindingName, err)
+		return fmt.Errorf("failed to get ResourceClaim %s: %w", claimName, err)
 	}
 
 	// Prepare the desired spec
-	desiredSpec := scorev1b1.ResourceBindingSpec{
+	desiredSpec := scorev1b1.ResourceClaimSpec{
 		WorkloadRef: scorev1b1.NamespacedName{
 			Name:      workload.Name,
 			Namespace: workload.Namespace,
@@ -73,10 +73,10 @@ func upsertResourceBinding(ctx context.Context, c client.Client, workload *score
 	}
 
 	if errors.IsNotFound(err) {
-		// Create new binding
-		binding = &scorev1b1.ResourceBinding{
+		// Create new claim
+		claim = &scorev1b1.ResourceClaim{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      bindingName,
+				Name:      claimName,
 				Namespace: workload.Namespace,
 				Labels: map[string]string{
 					"score.dev/workload": workload.Name,
@@ -87,19 +87,19 @@ func upsertResourceBinding(ctx context.Context, c client.Client, workload *score
 		}
 
 		// Set owner reference
-		if err := controllerutil.SetControllerReference(workload, binding, c.Scheme()); err != nil {
+		if err := controllerutil.SetControllerReference(workload, claim, c.Scheme()); err != nil {
 			return fmt.Errorf("failed to set owner reference: %w", err)
 		}
 
-		if err := c.Create(ctx, binding); err != nil {
-			return fmt.Errorf("failed to create ResourceBinding: %w", err)
+		if err := c.Create(ctx, claim); err != nil {
+			return fmt.Errorf("failed to create ResourceClaim: %w", err)
 		}
 	} else {
-		// Update existing binding if spec differs
-		if !resourceBindingSpecEqual(binding.Spec, desiredSpec) {
-			binding.Spec = desiredSpec
-			if err := c.Update(ctx, binding); err != nil {
-				return fmt.Errorf("failed to update ResourceBinding: %w", err)
+		// Update existing claim if spec differs
+		if !resourceClaimSpecEqual(claim.Spec, desiredSpec) {
+			claim.Spec = desiredSpec
+			if err := c.Update(ctx, claim); err != nil {
+				return fmt.Errorf("failed to update ResourceClaim: %w", err)
 			}
 		}
 	}
@@ -107,8 +107,8 @@ func upsertResourceBinding(ctx context.Context, c client.Client, workload *score
 	return nil
 }
 
-// resourceBindingSpecEqual compares two ResourceBindingSpec structs for equality
-func resourceBindingSpecEqual(a, b scorev1b1.ResourceBindingSpec) bool {
+// resourceClaimSpecEqual compares two ResourceClaimSpec structs for equality
+func resourceClaimSpecEqual(a, b scorev1b1.ResourceClaimSpec) bool {
 	if a.WorkloadRef != b.WorkloadRef || a.Key != b.Key || a.Type != b.Type {
 		return false
 	}

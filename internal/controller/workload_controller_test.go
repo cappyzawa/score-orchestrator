@@ -43,10 +43,10 @@ func stringPtr(s string) *string {
 	return &s
 }
 
-// Index functions for ResourceBinding and WorkloadPlan lookups (matching indexers.go)
-func indexResourceBindingByWorkload(obj client.Object) []string {
-	binding := obj.(*scorev1b1.ResourceBinding)
-	return []string{binding.Spec.WorkloadRef.Namespace + "/" + binding.Spec.WorkloadRef.Name}
+// Index functions for ResourceClaim and WorkloadPlan lookups (matching indexers.go)
+func indexResourceClaimByWorkload(obj client.Object) []string {
+	claim := obj.(*scorev1b1.ResourceClaim)
+	return []string{claim.Spec.WorkloadRef.Namespace + "/" + claim.Spec.WorkloadRef.Name}
 }
 
 func indexWorkloadPlanByWorkload(obj client.Object) []string {
@@ -102,7 +102,7 @@ var _ = Describe("Workload Controller", func() {
 
 			// 3) Setup indexers before starting manager
 			fi := mgr.GetFieldIndexer()
-			Expect(fi.IndexField(mgrCtx, &scorev1b1.ResourceBinding{}, meta.IndexResourceBindingByWorkload, indexResourceBindingByWorkload)).To(Succeed())
+			Expect(fi.IndexField(mgrCtx, &scorev1b1.ResourceClaim{}, meta.IndexResourceClaimByWorkload, indexResourceClaimByWorkload)).To(Succeed())
 			Expect(fi.IndexField(mgrCtx, &scorev1b1.WorkloadPlan{}, meta.IndexWorkloadPlanByWorkload, indexWorkloadPlanByWorkload)).To(Succeed())
 
 			// 4) Setup WorkloadReconciler with unique name for this test
@@ -114,9 +114,9 @@ var _ = Describe("Workload Controller", func() {
 			// Setup controller directly with unique name to avoid conflicts between tests
 			err = ctrl.NewControllerManagedBy(mgr).
 				For(&scorev1b1.Workload{}).
-				Owns(&scorev1b1.ResourceBinding{}).
+				Owns(&scorev1b1.ResourceClaim{}).
 				Owns(&scorev1b1.WorkloadPlan{}).
-				Watches(&scorev1b1.ResourceBinding{}, EnqueueRequestForOwningWorkload()).
+				Watches(&scorev1b1.ResourceClaim{}, EnqueueRequestForOwningWorkload()).
 				Watches(&scorev1b1.WorkloadPlan{}, EnqueueRequestForOwningWorkload()).
 				Named("workload-" + testNS.Name). // Unique name per test namespace
 				Complete(reconciler)
@@ -203,69 +203,69 @@ var _ = Describe("Workload Controller", func() {
 
 			By("Checking that ResourceBinding was created via Watch")
 			Eventually(func(g Gomega) {
-				bindingList := &scorev1b1.ResourceBindingList{}
-				g.Expect(k8sCl.List(context.Background(), bindingList, client.InNamespace(testNS.Name))).To(Succeed())
-				g.Expect(bindingList.Items).ToNot(BeEmpty())
+				claimList := &scorev1b1.ResourceClaimList{}
+				g.Expect(k8sCl.List(context.Background(), claimList, client.InNamespace(testNS.Name))).To(Succeed())
+				g.Expect(claimList.Items).ToNot(BeEmpty())
 
-				binding := bindingList.Items[0]
-				g.Expect(binding.Spec.Key).To(Equal("db"))
-				g.Expect(binding.Spec.Type).To(Equal("postgresql"))
-				g.Expect(binding.Spec.WorkloadRef.Name).To(Equal(workload.Name))
-				g.Expect(binding.Spec.WorkloadRef.Namespace).To(Equal(workload.Namespace))
+				claim := claimList.Items[0]
+				g.Expect(claim.Spec.Key).To(Equal("db"))
+				g.Expect(claim.Spec.Type).To(Equal("postgresql"))
+				g.Expect(claim.Spec.WorkloadRef.Name).To(Equal(workload.Name))
+				g.Expect(claim.Spec.WorkloadRef.Namespace).To(Equal(workload.Namespace))
 			}).Should(Succeed())
 
-			By("Checking that BindingsReady condition is False initially")
+			By("Checking that ClaimsReady condition is False initially")
 			Eventually(func(g Gomega) {
 				var updatedWorkload scorev1b1.Workload
 				g.Expect(k8sCl.Get(context.Background(), typeNamespacedName, &updatedWorkload)).To(Succeed())
-				bindingsCondition := conditions.GetCondition(updatedWorkload.Status.Conditions, conditions.ConditionBindingsReady)
-				g.Expect(bindingsCondition).NotTo(BeNil())
-				g.Expect(bindingsCondition.Status).To(Equal(metav1.ConditionFalse))
+				claimsCondition := conditions.GetCondition(updatedWorkload.Status.Conditions, conditions.ConditionBindingsReady)
+				g.Expect(claimsCondition).NotTo(BeNil())
+				g.Expect(claimsCondition.Status).To(Equal(metav1.ConditionFalse))
 			}).Should(Succeed())
 		})
 
 		It("should create WorkloadPlan when bindings are ready", func() {
 			// Wait for ResourceBinding to be created (event-driven)
 			By("Waiting for ResourceBinding to be created via Watch")
-			var bindingKey types.NamespacedName
+			var claimKey types.NamespacedName
 			Eventually(func(g Gomega) {
-				bindingList := &scorev1b1.ResourceBindingList{}
-				g.Expect(k8sCl.List(context.Background(), bindingList, client.InNamespace(testNS.Name))).To(Succeed())
-				g.Expect(bindingList.Items).ToNot(BeEmpty())
-				bindingKey = types.NamespacedName{
-					Name:      bindingList.Items[0].Name,
-					Namespace: bindingList.Items[0].Namespace,
+				claimList := &scorev1b1.ResourceClaimList{}
+				g.Expect(k8sCl.List(context.Background(), claimList, client.InNamespace(testNS.Name))).To(Succeed())
+				g.Expect(claimList.Items).ToNot(BeEmpty())
+				claimKey = types.NamespacedName{
+					Name:      claimList.Items[0].Name,
+					Namespace: claimList.Items[0].Namespace,
 				}
 			}).Should(Succeed())
 
 			By("Updating ResourceBinding status to Bound")
-			binding := &scorev1b1.ResourceBinding{}
-			Expect(k8sClient.Get(context.Background(), bindingKey, binding)).To(Succeed())
+			claim := &scorev1b1.ResourceClaim{}
+			Expect(k8sClient.Get(context.Background(), claimKey, claim)).To(Succeed())
 
-			binding.Status.Phase = scorev1b1.ResourceBindingPhaseBound
-			binding.Status.OutputsAvailable = true
-			binding.Status.Reason = conditions.ReasonSucceeded
-			binding.Status.Message = "Resource provisioned successfully"
-			binding.Status.Outputs = scorev1b1.ResourceBindingOutputs{
+			claim.Status.Phase = scorev1b1.ResourceClaimPhaseBound
+			claim.Status.OutputsAvailable = true
+			claim.Status.Reason = conditions.ReasonSucceeded
+			claim.Status.Message = "Resource provisioned successfully"
+			claim.Status.Outputs = scorev1b1.ResourceClaimOutputs{
 				URI: stringPtr("postgresql://user:pass@localhost:5432/db"),
 			}
-			Expect(k8sClient.Status().Update(context.Background(), binding)).To(Succeed())
+			Expect(k8sClient.Status().Update(context.Background(), claim)).To(Succeed())
 
 			By("Waiting for binding status change to propagate to cached client")
 			Eventually(func(g Gomega) {
-				var updatedBinding scorev1b1.ResourceBinding
-				g.Expect(k8sCl.Get(context.Background(), bindingKey, &updatedBinding)).To(Succeed())
-				g.Expect(updatedBinding.Status.Phase).To(Equal(scorev1b1.ResourceBindingPhaseBound))
-				g.Expect(updatedBinding.Status.OutputsAvailable).To(BeTrue())
+				var updatedClaim scorev1b1.ResourceClaim
+				g.Expect(k8sCl.Get(context.Background(), claimKey, &updatedClaim)).To(Succeed())
+				g.Expect(updatedClaim.Status.Phase).To(Equal(scorev1b1.ResourceClaimPhaseBound))
+				g.Expect(updatedClaim.Status.OutputsAvailable).To(BeTrue())
 			}).Should(Succeed())
 
-			By("Waiting for BindingsReady condition to become True via Watch")
+			By("Waiting for ClaimsReady condition to become True via Watch")
 			Eventually(func(g Gomega) {
 				var updatedWorkload scorev1b1.Workload
 				g.Expect(k8sCl.Get(context.Background(), typeNamespacedName, &updatedWorkload)).To(Succeed())
-				bindingsCondition := conditions.GetCondition(updatedWorkload.Status.Conditions, conditions.ConditionBindingsReady)
-				g.Expect(bindingsCondition).NotTo(BeNil())
-				g.Expect(bindingsCondition.Status).To(Equal(metav1.ConditionTrue))
+				claimsCondition := conditions.GetCondition(updatedWorkload.Status.Conditions, conditions.ConditionBindingsReady)
+				g.Expect(claimsCondition).NotTo(BeNil())
+				g.Expect(claimsCondition.Status).To(Equal(metav1.ConditionTrue))
 			}).Should(Succeed())
 
 			By("Waiting for WorkloadPlan to be created via Watch")

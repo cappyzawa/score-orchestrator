@@ -30,7 +30,6 @@ import (
 
 	scorev1b1 "github.com/cappyzawa/score-orchestrator/api/v1b1"
 	"github.com/cappyzawa/score-orchestrator/internal/conditions"
-	"github.com/cappyzawa/score-orchestrator/internal/endpoint"
 	"github.com/cappyzawa/score-orchestrator/internal/meta"
 	"github.com/cappyzawa/score-orchestrator/internal/reconcile"
 	"github.com/cappyzawa/score-orchestrator/internal/status"
@@ -46,9 +45,8 @@ type WorkloadReconciler struct {
 // +kubebuilder:rbac:groups=score.dev,resources=workloads,verbs=get;list;watch
 // +kubebuilder:rbac:groups=score.dev,resources=workloads/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=score.dev,resources=workloads/finalizers,verbs=update
-// +kubebuilder:rbac:groups=score.dev,resources=resourcebindings;workloadplans,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=score.dev,resources=resourcebindings/status,verbs=get;list;watch
-// +kubebuilder:rbac:groups=score.dev,resources=platformpolicies,verbs=get;list;watch
+// +kubebuilder:rbac:groups=score.dev,resources=resourceclaims;workloadplans,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=score.dev,resources=resourceclaims/status,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
 // Reconcile handles Workload reconciliation - the single writer of Workload.status
@@ -89,26 +87,26 @@ func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	// Create/update ResourceBindings
-	if err := reconcile.UpsertResourceBindings(ctx, r.Client, workload); err != nil {
-		log.Error(err, "Failed to upsert ResourceBindings")
+	if err := reconcile.UpsertResourceClaims(ctx, r.Client, workload); err != nil {
+		log.Error(err, "Failed to upsert ResourceClaims")
 		r.Recorder.Eventf(workload, "Warning", "BindingError", "Failed to create resource bindings: %v", err)
 		return ctrl.Result{}, err
 	}
 
 	// Aggregate binding statuses
-	bindings, err := GetResourceBindingsForWorkload(ctx, r.Client, workload)
+	claims, err := GetResourceClaimsForWorkload(ctx, r.Client, workload)
 	if err != nil {
-		log.Error(err, "Failed to get ResourceBindings")
+		log.Error(err, "Failed to get ResourceClaims")
 		return ctrl.Result{}, err
 	}
 
-	agg := status.AggregateBindingStatuses(bindings)
+	agg := status.AggregateClaimStatuses(claims)
 	status.UpdateWorkloadStatusFromAggregation(workload, agg)
 
 	// Create WorkloadPlan if bindings are ready
 	if agg.Ready {
 		runtimeClass := r.determineRuntimeClass(ctx, workload)
-		if err := reconcile.UpsertWorkloadPlan(ctx, r.Client, workload, bindings, runtimeClass); err != nil {
+		if err := reconcile.UpsertWorkloadPlan(ctx, r.Client, workload, claims, runtimeClass); err != nil {
 			log.Error(err, "Failed to upsert WorkloadPlan")
 			r.Recorder.Eventf(workload, "Warning", "PlanError", "Failed to create workload plan: %v", err)
 			return ctrl.Result{}, err
@@ -139,14 +137,14 @@ func (r *WorkloadReconciler) handleDeletion(ctx context.Context, workload *score
 	}
 
 	// Wait for ResourceBindings to be cleaned up by their owners (Resolvers)
-	bindings, err := GetResourceBindingsForWorkload(ctx, r.Client, workload)
+	claims, err := GetResourceClaimsForWorkload(ctx, r.Client, workload)
 	if err != nil {
-		log.Error(err, "Failed to get ResourceBindings during deletion")
+		log.Error(err, "Failed to get ResourceClaims during deletion")
 		return ctrl.Result{}, err
 	}
 
-	if len(bindings) > 0 {
-		log.Info("Waiting for ResourceBindings to be cleaned up", "count", len(bindings))
+	if len(claims) > 0 {
+		log.Info("Waiting for ResourceClaims to be cleaned up", "count", len(claims))
 		return ctrl.Result{RequeueAfter: 30 * 1000000000}, nil // 30 seconds
 	}
 
@@ -161,72 +159,29 @@ func (r *WorkloadReconciler) handleDeletion(ctx context.Context, workload *score
 }
 
 // validateInputsAndPolicy validates workload inputs and applies platform policy
-func (r *WorkloadReconciler) validateInputsAndPolicy(ctx context.Context, workload *scorev1b1.Workload) (bool, string, string) {
+func (r *WorkloadReconciler) validateInputsAndPolicy(_ context.Context, workload *scorev1b1.Workload) (bool, string, string) {
 	// For MVP: basic validation (CRD-level validation handles most cases)
 	if len(workload.Spec.Resources) == 0 {
 		return false, conditions.ReasonSpecInvalid, "Workload must define at least one resource"
 	}
 
-	// Policy application is minimal in MVP - just check if policy exists
-	policy := r.findApplicablePlatformPolicy(ctx, workload)
-	if policy == nil {
-		// No policy is OK for MVP - use defaults
-		return true, conditions.ReasonSucceeded, "Workload specification is valid"
-	}
-
-	// In a full implementation, this would validate against policy constraints
-	return true, conditions.ReasonSucceeded, "Workload specification is valid and policy compliant"
-}
-
-// findApplicablePlatformPolicy finds the applicable PlatformPolicy for the workload
-func (r *WorkloadReconciler) findApplicablePlatformPolicy(ctx context.Context, _ *scorev1b1.Workload) *scorev1b1.PlatformPolicy {
-	policyList := &scorev1b1.PlatformPolicyList{}
-	if err := r.List(ctx, policyList); err != nil {
-		return nil
-	}
-
-	// For MVP: simple first-match logic
-	// Real implementation would have sophisticated targeting logic
-	for _, policy := range policyList.Items {
-		if policy.Spec.Targeting == nil {
-			// Policy applies to all workloads
-			return &policy
-		}
-		// For MVP, we skip complex targeting logic
-	}
-
-	return nil
+	// ADR-0003: Policy validation is now handled via Orchestrator Config + Admission
+	// For MVP, basic spec validation is sufficient
+	return true, conditions.ReasonSucceeded, "Workload specification is valid"
 }
 
 // determineRuntimeClass determines the runtime class for the workload
+// ADR-0003: Runtime selection is now based on Orchestrator Config profiles
 func (r *WorkloadReconciler) determineRuntimeClass(ctx context.Context, workload *scorev1b1.Workload) string {
-	policy := r.findApplicablePlatformPolicy(ctx, workload)
-	if policy != nil && policy.Spec.RuntimeClass != "" {
-		return policy.Spec.RuntimeClass
-	}
-
-	// Default runtime class for MVP
+	// TODO: Implement profile-based runtime selection from Orchestrator Config
+	// For MVP, return default runtime class
 	return meta.RuntimeClassKubernetes
 }
 
 // updateRuntimeStatus updates RuntimeReady condition and endpoint (MVP implementation)
+// ADR-0003: Endpoint derivation is now based on WorkloadPlan templates
 func (r *WorkloadReconciler) updateRuntimeStatus(ctx context.Context, workload *scorev1b1.Workload) {
-	policy := r.findApplicablePlatformPolicy(ctx, workload)
-
-	// MVP logic: If PlatformPolicy has endpoint template, we can determine success
-	if policy != nil && policy.Spec.EndpointPolicy != nil && policy.Spec.EndpointPolicy.Template != nil {
-		// Derive endpoint from template
-		derivedEndpoint := endpoint.DeriveEndpoint(workload, policy)
-		if derivedEndpoint != nil {
-			workload.Status.Endpoint = derivedEndpoint
-			conditions.SetCondition(&workload.Status.Conditions,
-				conditions.ConditionRuntimeReady,
-				metav1.ConditionTrue,
-				conditions.ReasonSucceeded,
-				"Runtime provisioned successfully with endpoint")
-			return
-		}
-	}
+	// TODO: Implement template-based endpoint derivation from WorkloadPlan
 
 	// Check if we have a WorkloadPlan (indicates runtime is being engaged)
 	plan, err := GetWorkloadPlanForWorkload(ctx, r.Client, workload)
@@ -273,9 +228,9 @@ func inputsValidToConditionStatus(valid bool) metav1.ConditionStatus {
 func (r *WorkloadReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&scorev1b1.Workload{}).
-		Owns(&scorev1b1.ResourceBinding{}).
+		Owns(&scorev1b1.ResourceClaim{}).
 		Owns(&scorev1b1.WorkloadPlan{}).
-		Watches(&scorev1b1.ResourceBinding{}, EnqueueRequestForOwningWorkload()).
+		Watches(&scorev1b1.ResourceClaim{}, EnqueueRequestForOwningWorkload()).
 		Watches(&scorev1b1.WorkloadPlan{}, EnqueueRequestForOwningWorkload()).
 		Named("workload").
 		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).

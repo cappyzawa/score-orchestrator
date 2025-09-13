@@ -28,7 +28,7 @@ Shared coding rules for Score Orchestrator / Provisioner / Runtime controllers. 
 
 ## 2. controller‑runtime conventions
 
-* **Watches & Indexers**: Register field indexers *before* manager start (`ResourceBinding.byWorkload`, `WorkloadPlan.byWorkload`). Use `Watches(..., EnqueueRequestsFromMapFunc(byIndex))`.
+* **Watches & Indexers**: Register field indexers *before* manager start (`ResourceClaim.byWorkload`, `WorkloadPlan.byWorkload`). Use `Watches(..., EnqueueRequestsFromMapFunc(byIndex))`.
 * **Cache**: Read via the cached client by default. Use `APIReader` only when strict consistency is required.
 * **Concurrency**: Start with `MaxConcurrentReconciles=1` (tune later).
 * **Requeue**: Requeue on external waits (Resolver/Runtime) and on `IsConflict`.
@@ -41,17 +41,17 @@ Shared coding rules for Score Orchestrator / Provisioner / Runtime controllers. 
 * **Finalizer add/remove**: `Patch(MergeFrom(before))`. On 409 conflicts, requeue.
 * **Status updates**: Use `Status().Patch`. Batch multiple condition and endpoint updates into a **single patch**.
 * **Owned resource upsert**: `Create` or `Patch` (avoid `Apply` for now). Always set OwnerRef.
-* **Never write `ResourceBinding.status`**: Only the Provisioner updates it.
+* **Never write `ResourceClaim.status`**: Only the Provisioner updates it.
 * **No `WorkloadPlan.status`**: Do not add or write `.status` on `WorkloadPlan`.
 
 ---
 
 ## 4. Conditions & vocabulary
 
-* **Types**: `Ready`, `BindingsReady`, `RuntimeReady`, `InputsValid`.
+* **Types**: `Ready`, `ClaimsReady`, `RuntimeReady`, `InputsValid`.
 * **Reasons** (fixed): `Succeeded`, `SpecInvalid`, `PolicyViolation`, `BindingPending`, `BindingFailed`, `ProjectionError`, `RuntimeSelecting`, `RuntimeProvisioning`, `RuntimeDegraded`, `QuotaExceeded`, `PermissionDenied`, `NetworkUnavailable`.
-* **Message**: Neutral, single sentence, no runtime‑specific nouns (e.g., "All required bindings are available.").
-* **Readiness rule**: `Ready = InputsValid ∧ BindingsReady ∧ RuntimeReady`. Centralize logic in the `conditions` package.
+* **Message**: Neutral, single sentence, no runtime‑specific nouns (e.g., "All required claims are available.").
+* **Readiness rule**: `Ready = InputsValid ∧ ClaimsReady ∧ RuntimeReady`. Centralize logic in the `conditions` package.
 
 ---
 
@@ -75,8 +75,8 @@ The Orchestrator **reads its configuration** (ConfigMap/OCI) out-of-band from th
 
 ## 7. Logging & events
 
-* **Structured logs**: Emit at key transitions (BindingsReady change, Plan creation, Endpoint reflection, Policy evaluation).
-* **Events**: Use `Normal`/`Warning`. Centralize reason strings as constants (e.g., `PlanCreated`, `BindingsReady`, `EndpointReflected`).
+* **Structured logs**: Emit at key transitions (ClaimsReady change, Plan creation, Endpoint reflection, Policy evaluation).
+* **Events**: Use `Normal`/`Warning`. Centralize reason strings as constants (e.g., `PlanCreated`, `ClaimsReady`, `EndpointReflected`).
 
 ---
 

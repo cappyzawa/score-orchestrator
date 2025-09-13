@@ -23,15 +23,15 @@ const (
 
 // Field indexer names
 const (
-	IndexResourceBindingByWorkload = "resourcebinding.workloadRef"
-	IndexWorkloadPlanByWorkload    = "workloadplan.workloadRef"
+	IndexResourceClaimByWorkload = "resourceclaim.workloadRef"
+	IndexWorkloadPlanByWorkload  = "workloadplan.workloadRef"
 )
 
 // Event reasons
 const (
-	EventBindingCreated = "BindingCreated"
-	EventPlanCreated    = "PlanCreated"
-	EventReady          = "Ready"
+	EventClaimCreated = "ClaimCreated"
+	EventPlanCreated  = "PlanCreated"
+	EventReady        = "Ready"
 )
 
 // Runtime classes

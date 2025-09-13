@@ -23,15 +23,7 @@ resources:
     namespaced: true
   domain: dev
   group: score
-  kind: PlatformPolicy
-  path: github.com/cappyzawa/score-orchestrator/api/v1b1
-  version: v1b1
-- api:
-    crdVersion: v1
-    namespaced: true
-  domain: dev
-  group: score
-  kind: ResourceBinding
+  kind: ResourceClaim
   path: github.com/cappyzawa/score-orchestrator/api/v1b1
   version: v1b1
 - api:

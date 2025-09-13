@@ -22,15 +22,15 @@ import (
 )
 
 // +kubebuilder:object:root=true
-// +kubebuilder:resource:scope=Namespaced,shortName=rb
+// +kubebuilder:resource:scope=Namespaced,shortName=rc
 // +kubebuilder:subresource:status
-// ResourceBinding represents a single resource dependency resolution contract.
+// ResourceClaim represents a single resource dependency resolution contract.
 // Resolvers drive it to Bound and publish standardized outputs for consumption by runtimes.
-type ResourceBinding struct {
+type ResourceClaim struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-	Spec              ResourceBindingSpec   `json:"spec"`
-	Status            ResourceBindingStatus `json:"status,omitempty"`
+	Spec              ResourceClaimSpec   `json:"spec"`
+	Status            ResourceClaimStatus `json:"status,omitempty"`
 }
 
 // NamespacedName identifies a namespaced Kubernetes object.
@@ -52,8 +52,8 @@ const (
 	DeprovisionOrphan DeprovisionPolicy = "Orphan"
 )
 
-// ResourceBindingSpec declares the requested dependency and parameters the resolver needs.
-type ResourceBindingSpec struct {
+// ResourceClaimSpec declares the requested dependency and parameters the resolver needs.
+type ResourceClaimSpec struct {
 	// WorkloadRef points back to the owning Workload.
 	WorkloadRef NamespacedName `json:"workloadRef"`
 	// Key is the logical key under Workload.spec.resources (e.g., "db", "cache").
@@ -70,15 +70,15 @@ type ResourceBindingSpec struct {
 	DeprovisionPolicy *DeprovisionPolicy `json:"deprovisionPolicy,omitempty"`
 }
 
-// ResourceBindingPhase indicates coarse-grained resolver progress.
+// ResourceClaimPhase indicates coarse-grained resolver progress.
 // Reasons/messages are abstract and must not leak runtime-specific nouns.
-type ResourceBindingPhase string
+type ResourceClaimPhase string
 
 const (
-	ResourceBindingPhasePending ResourceBindingPhase = "Pending"
-	ResourceBindingPhaseBinding ResourceBindingPhase = "Binding"
-	ResourceBindingPhaseBound   ResourceBindingPhase = "Bound"
-	ResourceBindingPhaseFailed  ResourceBindingPhase = "Failed"
+	ResourceClaimPhasePending ResourceClaimPhase = "Pending"
+	ResourceClaimPhaseBinding ResourceClaimPhase = "Binding"
+	ResourceClaimPhaseBound   ResourceClaimPhase = "Bound"
+	ResourceClaimPhaseFailed  ResourceClaimPhase = "Failed"
 )
 
 // LocalObjectReference references a namespaced local object by name.
@@ -95,31 +95,33 @@ type CertificateOutput struct {
 	Data map[string][]byte `json:"data,omitempty"`
 }
 
-// ResourceBindingOutputs groups standardized outputs published by the resolver.
+// ResourceClaimOutputs groups standardized outputs published by the resolver.
 // At least one field must be set; platforms may define additional conventions by profile.
-// +kubebuilder:validation:XValidation:rule="has(self.secretRef) || has(self.configMapRef) || has(self.uri) || has(self.cert)",message="at least one of secretRef|configMapRef|uri|cert must be set"
-type ResourceBindingOutputs struct {
+// +kubebuilder:validation:XValidation:rule="has(self.secretRef) || has(self.configMapRef) || has(self.uri) || has(self.image) || has(self.cert)",message="at least one of secretRef|configMapRef|uri|image|cert must be set"
+type ResourceClaimOutputs struct {
 	// SecretRef points to a Secret containing credentials or connection data.
 	SecretRef *LocalObjectReference `json:"secretRef,omitempty"`
 	// ConfigMapRef points to a ConfigMap containing configuration data.
 	ConfigMapRef *LocalObjectReference `json:"configMapRef,omitempty"`
 	// URI exposes a connection endpoint (e.g., jdbc:, redis:, https:).
 	URI *string `json:"uri,omitempty"`
+	// Image exposes container image reference for image-based resources.
+	Image *string `json:"image,omitempty"`
 	// Cert provides certificate/key material or a reference to it.
 	Cert *CertificateOutput `json:"cert,omitempty"`
 }
 
-// ResourceBindingStatus is written by resolvers to report progress and outputs.
-type ResourceBindingStatus struct {
+// ResourceClaimStatus is written by resolvers to report progress and outputs.
+type ResourceClaimStatus struct {
 	// Phase summarizes resolver progress (Pending/Binding/Bound/Failed).
 	// +kubebuilder:validation:Enum=Pending;Binding;Bound;Failed
-	Phase ResourceBindingPhase `json:"phase,omitempty"`
+	Phase ResourceClaimPhase `json:"phase,omitempty"`
 	// Reason is an abstract machine-readable reason; avoid runtime-specific nouns.
 	Reason string `json:"reason,omitempty"`
 	// Message is a short, single-sentence human message aligned with the reason.
 	Message string `json:"message,omitempty"`
 	// Outputs are standardized resolver outputs for consumption by runtimes.
-	Outputs ResourceBindingOutputs `json:"outputs,omitempty"`
+	Outputs ResourceClaimOutputs `json:"outputs,omitempty"`
 	// OutputsAvailable indicates whether outputs are ready for consumption.
 	OutputsAvailable bool `json:"outputsAvailable,omitempty"`
 
@@ -130,13 +132,13 @@ type ResourceBindingStatus struct {
 }
 
 // +kubebuilder:object:root=true
-// ResourceBindingList contains a list of ResourceBinding.
-type ResourceBindingList struct {
+// ResourceClaimList contains a list of ResourceClaim.
+type ResourceClaimList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []ResourceBinding `json:"items"`
+	Items           []ResourceClaim `json:"items"`
 }
 
 func init() {
-	SchemeBuilder.Register(&ResourceBinding{}, &ResourceBindingList{})
+	SchemeBuilder.Register(&ResourceClaim{}, &ResourceClaimList{})
 }

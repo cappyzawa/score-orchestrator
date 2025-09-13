@@ -14,17 +14,7 @@ rules:
 - apiGroups:
   - score.dev
   resources:
-  - platformpolicies
-  - resourcebindings/status
-  - workloads
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - score.dev
-  resources:
-  - resourcebindings
+  - resourceclaims
   - workloadplans
   verbs:
   - create
@@ -33,6 +23,15 @@ rules:
   - list
   - patch
   - update
+  - watch
+- apiGroups:
+  - score.dev
+  resources:
+  - resourceclaims/status
+  - workloads
+  verbs:
+  - get
+  - list
   - watch
 - apiGroups:
   - score.dev

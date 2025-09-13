@@ -31,13 +31,12 @@ const (
 )
 
 // DeriveEndpoint determines the canonical endpoint for a Workload
-// MVP implementation: Only supports PlatformPolicy template-based derivation
-func DeriveEndpoint(workload *scorev1b1.Workload, policy *scorev1b1.PlatformPolicy) *string {
-	if policy == nil || policy.Spec.EndpointPolicy == nil || policy.Spec.EndpointPolicy.Template == nil {
-		return nil // No template available - requires runtime reporting (future phase)
+// ADR-0003: Template-based derivation is now handled via WorkloadPlan
+func DeriveEndpoint(workload *scorev1b1.Workload, template string, preferHTTPS bool) *string {
+	if template == "" {
+		return nil // No template available - requires runtime reporting
 	}
 
-	template := *policy.Spec.EndpointPolicy.Template
 	endpoint := renderTemplate(template, workload)
 
 	if endpoint == "" {
@@ -45,7 +44,7 @@ func DeriveEndpoint(workload *scorev1b1.Workload, policy *scorev1b1.PlatformPoli
 	}
 
 	// Normalize the endpoint
-	normalized := normalizeEndpoint(endpoint, policy.Spec.EndpointPolicy.PreferHTTPS)
+	normalized := normalizeEndpoint(endpoint, &preferHTTPS)
 	return &normalized
 }
 
@@ -122,7 +121,7 @@ func GetServiceBasedEndpoint(workload *scorev1b1.Workload) *string {
 	}
 
 	// For MVP, return nil to indicate service-based derivation is not implemented
-	// This will rely on PlatformPolicy templates or runtime reporting
+	// This will rely on WorkloadPlan templates or runtime reporting
 	return nil
 }
 

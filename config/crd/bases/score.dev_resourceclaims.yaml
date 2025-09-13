@@ -4,23 +4,23 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.18.0
-  name: resourcebindings.score.dev
+  name: resourceclaims.score.dev
 spec:
   group: score.dev
   names:
-    kind: ResourceBinding
-    listKind: ResourceBindingList
-    plural: resourcebindings
+    kind: ResourceClaim
+    listKind: ResourceClaimList
+    plural: resourceclaims
     shortNames:
-    - rb
-    singular: resourcebinding
+    - rc
+    singular: resourceclaim
   scope: Namespaced
   versions:
   - name: v1b1
     schema:
       openAPIV3Schema:
         description: |-
-          ResourceBinding represents a single resource dependency resolution contract.
+          ResourceClaim represents a single resource dependency resolution contract.
           Resolvers drive it to Bound and publish standardized outputs for consumption by runtimes.
         properties:
           apiVersion:
@@ -41,8 +41,8 @@ spec:
           metadata:
             type: object
           spec:
-            description: ResourceBindingSpec declares the requested dependency and
-              parameters the resolver needs.
+            description: ResourceClaimSpec declares the requested dependency and parameters
+              the resolver needs.
             properties:
               class:
                 description: Class optionally selects a resolver subclass/plan (PF-specific).
@@ -89,7 +89,7 @@ spec:
             - workloadRef
             type: object
           status:
-            description: ResourceBindingStatus is written by resolvers to report progress
+            description: ResourceClaimStatus is written by resolvers to report progress
               and outputs.
             properties:
               lastTransitionTime:
@@ -135,6 +135,10 @@ spec:
                     required:
                     - name
                     type: object
+                  image:
+                    description: Image exposes container image reference for image-based
+                      resources.
+                    type: string
                   secretRef:
                     description: SecretRef points to a Secret containing credentials
                       or connection data.
@@ -152,10 +156,10 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-validations:
-                - message: at least one of secretRef|configMapRef|uri|cert must be
-                    set
+                - message: at least one of secretRef|configMapRef|uri|image|cert must
+                    be set
                   rule: has(self.secretRef) || has(self.configMapRef) || has(self.uri)
-                    || has(self.cert)
+                    || has(self.image) || has(self.cert)
               outputsAvailable:
                 description: OutputsAvailable indicates whether outputs are ready
                   for consumption.

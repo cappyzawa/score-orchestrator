@@ -3,8 +3,7 @@
 # It should be run by config/default
 resources:
 - bases/score.dev_workloads.yaml
-- bases/score.dev_platformpolicies.yaml
-- bases/score.dev_resourcebindings.yaml
+- bases/score.dev_resourceclaims.yaml
 - bases/score.dev_workloadplans.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
