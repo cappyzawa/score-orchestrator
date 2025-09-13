@@ -86,7 +86,7 @@ func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return r.updateStatusAndReturn(ctx, workload, ctrl.Result{}, nil)
 	}
 
-	// Create/update ResourceBindings
+	// Create/update ResourceClaims
 	if err := reconcile.UpsertResourceClaims(ctx, r.Client, workload); err != nil {
 		log.Error(err, "Failed to upsert ResourceClaims")
 		r.Recorder.Eventf(workload, "Warning", "BindingError", "Failed to create resource bindings: %v", err)
@@ -136,7 +136,7 @@ func (r *WorkloadReconciler) handleDeletion(ctx context.Context, workload *score
 		return ctrl.Result{}, nil
 	}
 
-	// Wait for ResourceBindings to be cleaned up by their owners (Resolvers)
+	// Wait for ResourceClaims to be cleaned up by their owners (Provisioners)
 	claims, err := GetResourceClaimsForWorkload(ctx, r.Client, workload)
 	if err != nil {
 		log.Error(err, "Failed to get ResourceClaims during deletion")

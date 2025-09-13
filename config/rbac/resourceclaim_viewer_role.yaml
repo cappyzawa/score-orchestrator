@@ -11,12 +11,12 @@ metadata:
   labels:
     app.kubernetes.io/name: kbinit
     app.kubernetes.io/managed-by: kustomize
-  name: resourcebinding-viewer-role
+  name: resourceclaim-viewer-role
 rules:
 - apiGroups:
   - score.dev
   resources:
-  - resourcebindings
+  - resourceclaims
   verbs:
   - get
   - list
@@ -24,6 +24,6 @@ rules:
 - apiGroups:
   - score.dev
   resources:
-  - resourcebindings/status
+  - resourceclaims/status
   verbs:
   - get

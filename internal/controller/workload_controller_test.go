@@ -186,7 +186,7 @@ var _ = Describe("Workload Controller", func() {
 				}
 			}, 5*time.Second, 50*time.Millisecond).Should(BeTrue())
 		})
-		It("should successfully reconcile and create ResourceBindings", func() {
+		It("should successfully reconcile and create ResourceClaims", func() {
 			By("Waiting for controller to process the workload creation via Watch")
 			Eventually(func(g Gomega) {
 				var updatedWorkload scorev1b1.Workload
@@ -201,7 +201,7 @@ var _ = Describe("Workload Controller", func() {
 				g.Expect(inputsCondition.Status).To(Equal(metav1.ConditionTrue))
 			}).Should(Succeed())
 
-			By("Checking that ResourceBinding was created via Watch")
+			By("Checking that ResourceClaim was created via Watch")
 			Eventually(func(g Gomega) {
 				claimList := &scorev1b1.ResourceClaimList{}
 				g.Expect(k8sCl.List(context.Background(), claimList, client.InNamespace(testNS.Name))).To(Succeed())
@@ -225,8 +225,8 @@ var _ = Describe("Workload Controller", func() {
 		})
 
 		It("should create WorkloadPlan when bindings are ready", func() {
-			// Wait for ResourceBinding to be created (event-driven)
-			By("Waiting for ResourceBinding to be created via Watch")
+			// Wait for ResourceClaim to be created (event-driven)
+			By("Waiting for ResourceClaim to be created via Watch")
 			var claimKey types.NamespacedName
 			Eventually(func(g Gomega) {
 				claimList := &scorev1b1.ResourceClaimList{}
@@ -238,7 +238,7 @@ var _ = Describe("Workload Controller", func() {
 				}
 			}).Should(Succeed())
 
-			By("Updating ResourceBinding status to Bound")
+			By("Updating ResourceClaim status to Bound")
 			claim := &scorev1b1.ResourceClaim{}
 			Expect(k8sClient.Get(context.Background(), claimKey, claim)).To(Succeed())
 

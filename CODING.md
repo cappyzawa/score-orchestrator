@@ -65,8 +65,8 @@ Shared coding rules for Score Orchestrator / Provisioner / Runtime controllers. 
 
 ## 6. RBAC & visibility
 
-* **Orchestrator**: read `workloads`; write `workloads/status`; CRUD `resourcebindings` and `workloadplans`; read `resourcebindings/status`; create/patch `events`.
-* **Provisioner**: may write `resourcebindings/status` (others minimal).
+* **Orchestrator**: read `workloads`; write `workloads/status`; CRUD `resourceclaims` and `workloadplans`; read `resourceclaims/status`; create/patch `events`.
+* **Provisioner**: may write `resourceclaims/status` (others minimal).
 
 The Orchestrator **reads its configuration** (ConfigMap/OCI) out-of-band from the CRDs.
 * **Runtime**: writes details to its own internal objects; must not write `Workload.status`.
