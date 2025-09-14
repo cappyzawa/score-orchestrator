@@ -166,29 +166,21 @@ provisioners:
   provisioner: postgres-operator
   classes:
   - name: small
-    description: "Development/testing database"
+    description: "Small database instance"
     parameters:
       cpu: "500m"
       memory: "1Gi"
       storage: "10Gi"
       replicas: 1
       backup: false
-    constraints:
-      selectors:
-      - matchLabels:
-          environment: development
-  - name: production
-    description: "Production-grade database with HA"
+  - name: large
+    description: "Large database instance with HA"
     parameters:
       cpu: "2000m"
       memory: "8Gi"
       storage: "100Gi"
       replicas: 3
       backup: true
-    constraints:
-      selectors:
-      - matchLabels:
-          environment: production
 
 - type: redis
   provisioner: redis-operator
@@ -244,26 +236,22 @@ selectors:
 defaults:
   profile: web-service           # Global fallback
   selectors:
-  - matchLabels:
-      environment: development
-      team: backend
-    profile: dev-service
-  - matchLabels:
-      environment: production
-    profile: production-service
-    constraints:
-      features: ["scale-to-zero"]
-      regions: ["us-west-2", "eu-west-1"]
+  # Simplified selectors based on workload characteristics only
   - matchExpressions:
     - key: workload-type
       operator: In
       values: ["batch", "job"]
     profile: batch-job
+  - matchLabels:
+      app-tier: database
+    profile: batch-job           # Database maintenance jobs
 ```
 
-**Label evaluation scope (normative):** Selectors are evaluated against the union of `Workload.metadata.labels` and the target `Namespace.metadata.labels`. If a key exists in both, the **Workload label value takes precedence**.
+**Label evaluation scope (normative):** Selectors are evaluated against `Workload.metadata.labels` only. Per ADR-0004 (One Cluster, One Environment Model), environment-based selection is eliminated in favor of cluster-level environment definition.
 
 **Selector precedence (normative):** `defaults.selectors[]` is evaluated in document order. The **first** matching selector wins; no further selectors are evaluated. `matchLabels` and `matchExpressions` are ANDed.
+
+**Environment model (normative):** Each cluster represents exactly one environment context. Backend selection within a cluster is based on workload characteristics (profile, features, resources) rather than environment labels.
 
 ---
 
@@ -276,14 +264,14 @@ The orchestrator MUST select exactly one profile by evaluating, in order:
 
 1. **User hint evaluation**: `score.dev/profile` annotation on Workload (if present)
 2. **Auto-derivation**: Profile inferred from Workload characteristics (service ports, resource types)
-3. **Selector matching**: Apply `defaults.selectors[]` based on namespace/labels
+3. **Selector matching**: Apply `defaults.selectors[]` based on Workload labels only (per ADR-0004)
 4. **Global fallback**: Use `defaults.profile` as final fallback
 
 ### 2. Backend Filtering (Normative)
 For the selected profile, the orchestrator MUST:
 
 1. **Collect candidates** from `profile.backends[]`
-2. **Apply environment selectors** - filter by `constraints.selectors[]` against Workload namespace/labels
+2. **Apply workload selectors** - filter by `constraints.selectors[]` against Workload labels (environment selectors removed per ADR-0004)
 3. **Validate feature requirements** - verify `score.dev/requirements` annotation against `constraints.features[]`
 4. **Check resource constraints** - validate CPU/memory/storage against `constraints.resources`
 5. **Admission control** - VAP/OPA/Kyverno policy enforcement (platform-specific)
@@ -363,9 +351,6 @@ data:
           priority: 100
           version: "1.2.3"
           constraints:
-            selectors:
-            - matchLabels:
-                environment: production
             features: ["http-ingress"]
             resources:
               cpu: "100m-2000m"
@@ -402,9 +387,6 @@ data:
       defaults:
         profile: web-service
         selectors:
-        - matchLabels:
-            environment: development
-          profile: dev-service
         - matchLabels:
             workload-type: batch
           profile: batch-job
