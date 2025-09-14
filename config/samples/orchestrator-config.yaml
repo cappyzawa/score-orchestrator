@@ -40,6 +40,10 @@ data:
             - matchLabels:
                 environment: development
             features: ["http-ingress"]
+            resources:
+              cpu: "50m-1000m"
+              memory: "64Mi-2Gi"
+              storage: "1Gi-10Gi"
         - backendId: k8s-web-prod
           runtimeClass: kubernetes
           template:
@@ -58,6 +62,10 @@ data:
             - matchLabels:
                 environment: production
             features: ["http-ingress", "monitoring"]
+            resources:
+              cpu: "100m-4000m"
+              memory: "128Mi-8Gi"
+              storage: "10Gi-100Gi"
       - name: batch-job
         description: "Batch processing workloads"
         backends:
@@ -70,6 +78,15 @@ data:
               restartPolicy: OnFailure
           priority: 100
           version: "1.0.0"
+          constraints:
+            selectors:
+            - matchExpressions:
+              - key: workload-type
+                operator: In
+                values: ["batch", "job", "cron"]
+            resources:
+              cpu: "100m-8000m"
+              memory: "256Mi-16Gi"
       provisioners:
       - type: postgres
         provisioner: postgres-operator
@@ -92,5 +109,19 @@ data:
         profile: web-service
         selectors:
         - matchLabels:
-            workload-type: batch
+            environment: development
+            team: backend
+          profile: web-service
+        - matchLabels:
+            environment: production
+          profile: web-service
+          constraints:
+            features: ["monitoring"]
+        - matchExpressions:
+          - key: workload-type
+            operator: In
+            values: ["batch", "job", "cron"]
           profile: batch-job
+        - matchLabels:
+            app-tier: database
+          profile: batch-job  # Database maintenance jobs

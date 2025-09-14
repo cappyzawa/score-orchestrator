@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
@@ -265,19 +266,10 @@ func (s *profileSelector) validateFeatureRequirements(workload *scorev1b1.Worklo
 		return true
 	}
 
-	// Get workload feature requirements from annotation
-	requirementsAnnotation, exists := workload.Annotations["score.dev/requirements"]
-	if !exists {
-		return len(requiredFeatures) == 0
-	}
+	// Get workload features from annotation and auto-detection
+	workloadFeatureSet := s.getWorkloadFeatures(workload)
 
-	workloadFeatures := strings.Split(requirementsAnnotation, ",")
-	workloadFeatureSet := make(map[string]bool)
-	for _, feature := range workloadFeatures {
-		workloadFeatureSet[strings.TrimSpace(feature)] = true
-	}
-
-	// All required features must be present in workload requirements
+	// All required features must be present in workload capabilities
 	for _, required := range requiredFeatures {
 		if !workloadFeatureSet[required] {
 			return false
@@ -287,10 +279,32 @@ func (s *profileSelector) validateFeatureRequirements(workload *scorev1b1.Worklo
 	return true
 }
 
-// validateResourceConstraints validates resource constraints (placeholder implementation)
+// validateResourceConstraints validates resource constraints against workload requirements
 func (s *profileSelector) validateResourceConstraints(workload *scorev1b1.Workload, constraints scorev1b1.ResourceConstraints) bool {
-	// For MVP: basic validation - could be enhanced with proper quantity parsing
-	// This is a simplified implementation for now
+	// Extract total resource requirements from all containers
+	totalCPU, totalMemory, totalStorage := s.calculateWorkloadResources(workload)
+
+	// Validate CPU constraints
+	if constraints.CPU != "" {
+		if !s.validateQuantityConstraint(totalCPU, constraints.CPU) {
+			return false
+		}
+	}
+
+	// Validate Memory constraints
+	if constraints.Memory != "" {
+		if !s.validateQuantityConstraint(totalMemory, constraints.Memory) {
+			return false
+		}
+	}
+
+	// Validate Storage constraints
+	if constraints.Storage != "" {
+		if !s.validateQuantityConstraint(totalStorage, constraints.Storage) {
+			return false
+		}
+	}
+
 	return true
 }
 
@@ -327,4 +341,243 @@ func (s *profileSelector) selectBackend(candidates []scorev1b1.BackendSpec) scor
 
 	// Return the first (best) candidate
 	return candidates[0]
+}
+
+// calculateWorkloadResources calculates total resource requirements from all containers
+func (s *profileSelector) calculateWorkloadResources(workload *scorev1b1.Workload) (string, string, string) {
+	var totalCPU, totalMemory, totalStorage int64
+
+	// Sum up resources from all containers
+	for _, container := range workload.Spec.Containers {
+		if container.Resources != nil && container.Resources.Requests != nil {
+			// Parse CPU requests
+			if cpuStr, exists := container.Resources.Requests["cpu"]; exists {
+				if cpu, err := parseQuantity(cpuStr); err == nil {
+					totalCPU += cpu
+				}
+			}
+
+			// Parse Memory requests
+			if memoryStr, exists := container.Resources.Requests["memory"]; exists {
+				if memory, err := parseQuantity(memoryStr); err == nil {
+					totalMemory += memory
+				}
+			}
+
+			// Parse Storage requests (ephemeral storage)
+			if storageStr, exists := container.Resources.Requests["ephemeral-storage"]; exists {
+				if storage, err := parseQuantity(storageStr); err == nil {
+					totalStorage += storage
+				}
+			}
+		}
+	}
+
+	// Convert back to string format
+	cpuStr := fmt.Sprintf("%dm", totalCPU)
+	memoryStr := fmt.Sprintf("%d", totalMemory)
+	storageStr := fmt.Sprintf("%d", totalStorage)
+
+	return cpuStr, memoryStr, storageStr
+}
+
+// validateQuantityConstraint validates a quantity against a range constraint
+func (s *profileSelector) validateQuantityConstraint(actual, constraint string) bool {
+	if constraint == "" {
+		return true
+	}
+
+	// Parse constraint format: "100m-4000m", "100m-", "-4000m", or "100m"
+	parts := strings.Split(constraint, "-")
+
+	switch len(parts) {
+	case 1:
+		// Exact match: "100m"
+		return actual == constraint
+	case 2:
+		minStr, maxStr := parts[0], parts[1]
+
+		// Parse actual value
+		actualQty, err := parseQuantity(actual)
+		if err != nil {
+			return false
+		}
+
+		// Check minimum (if specified)
+		if minStr != "" {
+			minQty, err := parseQuantity(minStr)
+			if err != nil {
+				return false
+			}
+			if actualQty < minQty {
+				return false
+			}
+		}
+
+		// Check maximum (if specified)
+		if maxStr != "" {
+			maxQty, err := parseQuantity(maxStr)
+			if err != nil {
+				return false
+			}
+			if actualQty > maxQty {
+				return false
+			}
+		}
+
+		return true
+	default:
+		return false
+	}
+}
+
+// parseQuantity parses a Kubernetes quantity string to a comparable value
+func parseQuantity(quantityStr string) (int64, error) {
+	if quantityStr == "" {
+		return 0, nil
+	}
+
+	// Simple parsing for common units (millicpu, memory)
+	if strings.HasSuffix(quantityStr, "m") {
+		// CPU millicores
+		value := strings.TrimSuffix(quantityStr, "m")
+		return strconv.ParseInt(value, 10, 64)
+	}
+
+	if strings.HasSuffix(quantityStr, "Mi") {
+		// Memory in MiB
+		value := strings.TrimSuffix(quantityStr, "Mi")
+		val, err := strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			return 0, err
+		}
+		return val * 1024 * 1024, nil
+	}
+
+	if strings.HasSuffix(quantityStr, "Gi") {
+		// Memory in GiB
+		value := strings.TrimSuffix(quantityStr, "Gi")
+		val, err := strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			return 0, err
+		}
+		return val * 1024 * 1024 * 1024, nil
+	}
+
+	// Plain number (bytes)
+	return strconv.ParseInt(quantityStr, 10, 64)
+}
+
+// getWorkloadFeatures returns a set of workload features (from annotation and auto-detection)
+func (s *profileSelector) getWorkloadFeatures(workload *scorev1b1.Workload) map[string]bool {
+	featureSet := make(map[string]bool)
+
+	// Get explicit requirements from annotation
+	if requirementsAnnotation, exists := workload.Annotations["score.dev/requirements"]; exists {
+		workloadFeatures := strings.Split(requirementsAnnotation, ",")
+		for _, feature := range workloadFeatures {
+			featureSet[strings.TrimSpace(feature)] = true
+		}
+	}
+
+	// Auto-detect features from workload characteristics
+	s.autoDetectFeatures(workload, featureSet)
+
+	return featureSet
+}
+
+// autoDetectFeatures automatically detects features based on workload characteristics
+func (s *profileSelector) autoDetectFeatures(workload *scorev1b1.Workload, featureSet map[string]bool) {
+	s.detectIngressFeatures(workload, featureSet)
+	s.detectMonitoringFeatures(workload, featureSet)
+	s.detectScaleFeatures(workload, featureSet)
+	s.detectStorageFeatures(workload, featureSet)
+	s.detectDatabaseFeatures(workload, featureSet)
+}
+
+// detectIngressFeatures detects HTTP/HTTPS ingress capabilities
+func (s *profileSelector) detectIngressFeatures(workload *scorev1b1.Workload, featureSet map[string]bool) {
+	if workload.Spec.Service == nil || len(workload.Spec.Service.Ports) == 0 {
+		return
+	}
+
+	for _, port := range workload.Spec.Service.Ports {
+		// Check for common HTTP ports
+		if port.Port == 80 || port.Port == 8080 || port.Port == 3000 || port.Port == 8000 {
+			featureSet["http-ingress"] = true
+		}
+		// Check for HTTPS ports
+		if port.Port == 443 || port.Port == 8443 {
+			featureSet["https-ingress"] = true
+			featureSet["http-ingress"] = true // HTTPS implies HTTP capability
+		}
+	}
+
+	// If any service port is exposed, it likely needs ingress capability
+	featureSet["http-ingress"] = true
+}
+
+// detectMonitoringFeatures detects monitoring and metrics capabilities
+func (s *profileSelector) detectMonitoringFeatures(workload *scorev1b1.Workload, featureSet map[string]bool) {
+	// Check service ports for monitoring
+	if workload.Spec.Service != nil {
+		for _, port := range workload.Spec.Service.Ports {
+			// Common monitoring/metrics ports
+			if port.Port == 9090 || port.Port == 9100 || port.Port == 3000 {
+				featureSet["monitoring"] = true
+				return
+			}
+		}
+	}
+
+	// Check container environment variables
+	for _, container := range workload.Spec.Containers {
+		if container.Variables == nil {
+			continue
+		}
+		for varName := range container.Variables {
+			upperVarName := strings.ToUpper(varName)
+			if strings.Contains(upperVarName, "METRICS") ||
+				strings.Contains(upperVarName, "MONITORING") ||
+				strings.Contains(upperVarName, "PROMETHEUS") {
+				featureSet["monitoring"] = true
+				return
+			}
+		}
+	}
+}
+
+// detectScaleFeatures detects scale-to-zero capabilities
+func (s *profileSelector) detectScaleFeatures(workload *scorev1b1.Workload, featureSet map[string]bool) {
+	if scaleAnnotation, exists := workload.Annotations["score.dev/scale-to-zero"]; exists && scaleAnnotation == "true" {
+		featureSet["scale-to-zero"] = true
+	}
+}
+
+// detectStorageFeatures detects persistent storage requirements
+func (s *profileSelector) detectStorageFeatures(workload *scorev1b1.Workload, featureSet map[string]bool) {
+	for _, container := range workload.Spec.Containers {
+		if len(container.Files) > 0 {
+			featureSet["persistent-storage"] = true
+			return
+		}
+	}
+}
+
+// detectDatabaseFeatures detects database connectivity requirements
+func (s *profileSelector) detectDatabaseFeatures(workload *scorev1b1.Workload, featureSet map[string]bool) {
+	if workload.Spec.Resources == nil {
+		return
+	}
+
+	for _, resource := range workload.Spec.Resources {
+		resourceType := strings.ToLower(resource.Type)
+		if strings.Contains(resourceType, "postgres") ||
+			strings.Contains(resourceType, "mysql") ||
+			strings.Contains(resourceType, "database") ||
+			strings.Contains(resourceType, "redis") {
+			featureSet["database-connectivity"] = true
+			return
+		}
+	}
 }

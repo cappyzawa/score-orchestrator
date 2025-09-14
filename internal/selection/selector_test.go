@@ -544,3 +544,185 @@ func TestProfileSelector_BackendFiltering(t *testing.T) {
 		})
 	}
 }
+
+func TestProfileSelector_ResourceConstraints(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, scorev1b1.AddToScheme(scheme))
+
+	tests := []struct {
+		name        string
+		workload    *scorev1b1.Workload
+		constraints scorev1b1.ResourceConstraints
+		expectMatch bool
+	}{
+		{
+			name: "workload within CPU constraints",
+			workload: &scorev1b1.Workload{
+				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
+				Spec: scorev1b1.WorkloadSpec{
+					Containers: map[string]scorev1b1.ContainerSpec{
+						"app": {
+							Image: "nginx:latest",
+							Resources: &scorev1b1.ResourceRequirements{
+								Requests: map[string]string{
+									"cpu": "500m",
+								},
+							},
+						},
+					},
+				},
+			},
+			constraints: scorev1b1.ResourceConstraints{
+				CPU: "100m-1000m",
+			},
+			expectMatch: true,
+		},
+		{
+			name: "workload exceeds CPU constraints",
+			workload: &scorev1b1.Workload{
+				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
+				Spec: scorev1b1.WorkloadSpec{
+					Containers: map[string]scorev1b1.ContainerSpec{
+						"app": {
+							Image: "nginx:latest",
+							Resources: &scorev1b1.ResourceRequirements{
+								Requests: map[string]string{
+									"cpu": "2000m",
+								},
+							},
+						},
+					},
+				},
+			},
+			constraints: scorev1b1.ResourceConstraints{
+				CPU: "100m-1000m",
+			},
+			expectMatch: false,
+		},
+		{
+			name: "workload within memory constraints",
+			workload: &scorev1b1.Workload{
+				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
+				Spec: scorev1b1.WorkloadSpec{
+					Containers: map[string]scorev1b1.ContainerSpec{
+						"app": {
+							Image: "nginx:latest",
+							Resources: &scorev1b1.ResourceRequirements{
+								Requests: map[string]string{
+									"memory": "512Mi",
+								},
+							},
+						},
+					},
+				},
+			},
+			constraints: scorev1b1.ResourceConstraints{
+				Memory: "128Mi-1Gi",
+			},
+			expectMatch: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &scorev1b1.OrchestratorConfig{}
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			selector := NewProfileSelector(config, fakeClient).(*profileSelector)
+
+			result := selector.validateResourceConstraints(tt.workload, tt.constraints)
+			assert.Equal(t, tt.expectMatch, result)
+		})
+	}
+}
+
+func TestProfileSelector_FeatureMatching(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, scorev1b1.AddToScheme(scheme))
+
+	tests := []struct {
+		name             string
+		workload         *scorev1b1.Workload
+		requiredFeatures []string
+		expectMatch      bool
+	}{
+		{
+			name: "web service with HTTP ingress requirement",
+			workload: &scorev1b1.Workload{
+				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
+				Spec: scorev1b1.WorkloadSpec{
+					Containers: map[string]scorev1b1.ContainerSpec{
+						"app": {Image: "nginx:latest"},
+					},
+					Service: &scorev1b1.ServiceSpec{
+						Ports: []scorev1b1.ServicePort{
+							{Port: 8080},
+						},
+					},
+				},
+			},
+			requiredFeatures: []string{"http-ingress"},
+			expectMatch:      true,
+		},
+		{
+			name: "batch job without HTTP service",
+			workload: &scorev1b1.Workload{
+				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
+				Spec: scorev1b1.WorkloadSpec{
+					Containers: map[string]scorev1b1.ContainerSpec{
+						"app": {Image: "batch-job:latest"},
+					},
+				},
+			},
+			requiredFeatures: []string{"http-ingress"},
+			expectMatch:      false,
+		},
+		{
+			name: "explicit feature annotation",
+			workload: &scorev1b1.Workload{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test",
+					Namespace: "default",
+					Annotations: map[string]string{
+						"score.dev/requirements": "monitoring,scale-to-zero",
+					},
+				},
+				Spec: scorev1b1.WorkloadSpec{
+					Containers: map[string]scorev1b1.ContainerSpec{
+						"app": {Image: "app:latest"},
+					},
+				},
+			},
+			requiredFeatures: []string{"monitoring"},
+			expectMatch:      true,
+		},
+		{
+			name: "database connectivity auto-detection",
+			workload: &scorev1b1.Workload{
+				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
+				Spec: scorev1b1.WorkloadSpec{
+					Containers: map[string]scorev1b1.ContainerSpec{
+						"app": {Image: "app:latest"},
+					},
+					Resources: map[string]scorev1b1.ResourceSpec{
+						"db": {Type: "postgres"},
+					},
+				},
+			},
+			requiredFeatures: []string{"database-connectivity"},
+			expectMatch:      true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &scorev1b1.OrchestratorConfig{}
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			selector := NewProfileSelector(config, fakeClient).(*profileSelector)
+
+			result := selector.validateFeatureRequirements(tt.workload, tt.requiredFeatures)
+			assert.Equal(t, tt.expectMatch, result)
+		})
+	}
+}
