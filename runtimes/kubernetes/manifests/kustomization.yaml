@@ -1,0 +1,20 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: kubernetes-runtime-controller
+  namespace: score-system
+
+resources:
+- rbac.yaml
+- deployment.yaml
+
+images:
+- name: ghcr.io/cappyzawa/score-orchestrator/kubernetes-runtime
+  newName: kubernetes-runtime
+  newTag: latest
+
+commonLabels:
+  app.kubernetes.io/component: runtime-controller
+  app.kubernetes.io/name: kubernetes-runtime-controller
+  app.kubernetes.io/part-of: score-orchestrator

@@ -1,0 +1,114 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubernetes-runtime-controller
+  labels:
+    app.kubernetes.io/name: kubernetes-runtime-controller
+    app.kubernetes.io/component: runtime-controller
+    app.kubernetes.io/part-of: score-orchestrator
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - score.dev
+  resources:
+  - workloadplans
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - score.dev
+  resources:
+  - workloadplans/status
+  verbs:
+  - get
+- apiGroups:
+  - score.dev
+  resources:
+  - workloads
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - services
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kubernetes-runtime-controller
+  namespace: score-system
+  labels:
+    app.kubernetes.io/name: kubernetes-runtime-controller
+    app.kubernetes.io/component: runtime-controller
+    app.kubernetes.io/part-of: score-orchestrator
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubernetes-runtime-controller
+  labels:
+    app.kubernetes.io/name: kubernetes-runtime-controller
+    app.kubernetes.io/component: runtime-controller
+    app.kubernetes.io/part-of: score-orchestrator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kubernetes-runtime-controller
+subjects:
+- kind: ServiceAccount
+  name: kubernetes-runtime-controller
+  namespace: score-system
