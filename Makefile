@@ -1,5 +1,6 @@
 # Image URL to use all building/pushing image targets
 IMG ?= controller:latest
+RUNTIME_IMG ?= kubernetes-runtime:latest
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -108,6 +109,10 @@ lint-config: golangci-lint ## Verify golangci-lint linter configuration
 build: manifests generate fmt vet ## Build manager binary.
 	go build -o bin/manager cmd/main.go
 
+.PHONY: build-runtime
+build-runtime: ## Build kubernetes-runtime binary.
+	$(MAKE) -C runtimes/kubernetes build
+
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
 	go run ./cmd/main.go
@@ -119,9 +124,17 @@ run: manifests generate fmt vet ## Run a controller from your host.
 docker-build: ## Build docker image with the manager.
 	$(CONTAINER_TOOL) build -t ${IMG} .
 
+.PHONY: docker-build-runtime
+docker-build-runtime: ## Build docker image with the kubernetes-runtime.
+	$(MAKE) -C runtimes/kubernetes docker-build RUNTIME_IMG=${RUNTIME_IMG}
+
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
 	$(CONTAINER_TOOL) push ${IMG}
+
+.PHONY: docker-push-runtime
+docker-push-runtime: ## Push docker image with the kubernetes-runtime.
+	$(MAKE) -C runtimes/kubernetes docker-push RUNTIME_IMG=${RUNTIME_IMG}
 
 # PLATFORMS defines the target platforms for the manager image be built to provide support to multiple
 # architectures. (i.e. make docker-buildx IMG=myregistry/mypoperator:0.0.1). To use this option you need to:
@@ -165,9 +178,17 @@ deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in
 	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
 	$(KUSTOMIZE) build config/default | $(KUBECTL) apply -f -
 
+.PHONY: deploy-runtime
+deploy-runtime: ## Deploy kubernetes-runtime controller to the K8s cluster specified in ~/.kube/config.
+	$(MAKE) -C runtimes/kubernetes deploy RUNTIME_IMG=${RUNTIME_IMG}
+
 .PHONY: undeploy
 undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
 	$(KUSTOMIZE) build config/default | $(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f -
+
+.PHONY: undeploy-runtime
+undeploy-runtime: ## Undeploy kubernetes-runtime controller from the K8s cluster specified in ~/.kube/config.
+	$(MAKE) -C runtimes/kubernetes undeploy
 
 ##@ Dependencies
 

@@ -1,0 +1,69 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubernetes-runtime-controller
+  namespace: score-system
+  labels:
+    app.kubernetes.io/name: kubernetes-runtime-controller
+    app.kubernetes.io/component: runtime-controller
+    app.kubernetes.io/part-of: score-orchestrator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kubernetes-runtime-controller
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kubernetes-runtime-controller
+        app.kubernetes.io/component: runtime-controller
+        app.kubernetes.io/part-of: score-orchestrator
+    spec:
+      serviceAccountName: kubernetes-runtime-controller
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+      containers:
+      - name: controller
+        image: ghcr.io/cappyzawa/score-orchestrator/kubernetes-runtime:latest
+        imagePullPolicy: IfNotPresent
+        args:
+        - --leader-elect
+        - --metrics-bind-address=:8080
+        - --health-probe-bind-address=:8081
+        env:
+        - name: RUNTIME_CLASS
+          value: "kubernetes"
+        ports:
+        - containerPort: 8080
+          name: metrics
+          protocol: TCP
+        - containerPort: 8081
+          name: health
+          protocol: TCP
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: 500m
+            memory: 128Mi
+          requests:
+            cpu: 10m
+            memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+      terminationGracePeriodSeconds: 10

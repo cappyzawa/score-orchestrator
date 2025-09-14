@@ -1,0 +1,324 @@
+package controller
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/tools/record"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
+
+	scorev1b1 "github.com/cappyzawa/score-orchestrator/api/v1b1"
+)
+
+// KubernetesRuntimeReconciler reconciles WorkloadPlan resources and materializes Kubernetes resources
+type KubernetesRuntimeReconciler struct {
+	client.Client
+	Scheme   *runtime.Scheme
+	Recorder record.EventRecorder
+}
+
+// Reconcile handles WorkloadPlan changes and materializes Kubernetes resources
+// RBAC permissions are managed manually in deployments/kubernetes-runtime/rbac.yaml
+// to avoid contaminating the main Orchestrator RBAC configuration
+func (r *KubernetesRuntimeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	logger := log.FromContext(ctx)
+
+	// 1. Get WorkloadPlan
+	plan := &scorev1b1.WorkloadPlan{}
+	if err := r.Get(ctx, req.NamespacedName, plan); err != nil {
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+
+	// Skip non-kubernetes runtime classes
+	if plan.Spec.RuntimeClass != "kubernetes" {
+		logger.V(1).Info("Skipping WorkloadPlan with non-kubernetes runtime class",
+			"runtimeClass", plan.Spec.RuntimeClass)
+		return ctrl.Result{}, nil
+	}
+
+	logger.Info("Reconciling WorkloadPlan for Kubernetes runtime",
+		"workloadPlan", req.NamespacedName,
+		"runtimeClass", plan.Spec.RuntimeClass)
+
+	// 2. Get referenced Workload for metadata and spec
+	workload, err := r.getWorkload(ctx, plan)
+	if err != nil {
+		logger.Error(err, "Failed to get referenced Workload")
+		r.Recorder.Event(plan, corev1.EventTypeWarning, "WorkloadNotFound", err.Error())
+		return ctrl.Result{RequeueAfter: time.Minute}, nil
+	}
+
+	// 3. Build and apply Kubernetes resources
+	if err := r.reconcileDeployment(ctx, plan, workload); err != nil {
+		logger.Error(err, "Failed to reconcile Deployment")
+		r.Recorder.Event(plan, corev1.EventTypeWarning, "DeploymentFailed", err.Error())
+		return ctrl.Result{RequeueAfter: time.Minute}, err
+	}
+
+	if err := r.reconcileService(ctx, plan, workload); err != nil {
+		logger.Error(err, "Failed to reconcile Service")
+		r.Recorder.Event(plan, corev1.EventTypeWarning, "ServiceFailed", err.Error())
+		return ctrl.Result{RequeueAfter: time.Minute}, err
+	}
+
+	// 4. Record successful reconciliation
+	r.Recorder.Event(plan, corev1.EventTypeNormal, "ResourcesReconciled",
+		"Successfully reconciled Kubernetes resources")
+
+	logger.Info("Successfully reconciled WorkloadPlan", "workloadPlan", req.NamespacedName)
+	return ctrl.Result{}, nil
+}
+
+// getWorkload retrieves the referenced Workload from WorkloadPlan
+func (r *KubernetesRuntimeReconciler) getWorkload(ctx context.Context, plan *scorev1b1.WorkloadPlan) (*scorev1b1.Workload, error) {
+	workload := &scorev1b1.Workload{}
+	key := types.NamespacedName{
+		Namespace: plan.Spec.WorkloadRef.Namespace,
+		Name:      plan.Spec.WorkloadRef.Name,
+	}
+
+	if err := r.Get(ctx, key, workload); err != nil {
+		return nil, fmt.Errorf("failed to get workload %s: %w", key, err)
+	}
+
+	return workload, nil
+}
+
+// reconcileDeployment creates or updates the Deployment for the WorkloadPlan
+func (r *KubernetesRuntimeReconciler) reconcileDeployment(ctx context.Context, plan *scorev1b1.WorkloadPlan, workload *scorev1b1.Workload) error {
+	deployment := r.buildDeployment(plan, workload)
+
+	// Set WorkloadPlan as owner for garbage collection
+	if err := ctrl.SetControllerReference(plan, deployment, r.Scheme); err != nil {
+		return fmt.Errorf("failed to set controller reference: %w", err)
+	}
+
+	// Create or update the deployment
+	existing := &appsv1.Deployment{}
+	key := types.NamespacedName{Namespace: deployment.Namespace, Name: deployment.Name}
+
+	if err := r.Get(ctx, key, existing); err != nil {
+		if client.IgnoreNotFound(err) == nil {
+			// Create new deployment
+			if err := r.Create(ctx, deployment); err != nil {
+				return fmt.Errorf("failed to create deployment: %w", err)
+			}
+			log.FromContext(ctx).Info("Created Deployment", "name", deployment.Name)
+		} else {
+			return fmt.Errorf("failed to get deployment: %w", err)
+		}
+	} else {
+		// Update existing deployment
+		existing.Spec = deployment.Spec
+		existing.Labels = deployment.Labels
+		existing.Annotations = deployment.Annotations
+
+		if err := r.Update(ctx, existing); err != nil {
+			return fmt.Errorf("failed to update deployment: %w", err)
+		}
+		log.FromContext(ctx).Info("Updated Deployment", "name", deployment.Name)
+	}
+
+	return nil
+}
+
+// reconcileService creates or updates the Service for the WorkloadPlan
+func (r *KubernetesRuntimeReconciler) reconcileService(ctx context.Context, plan *scorev1b1.WorkloadPlan, workload *scorev1b1.Workload) error {
+	// Skip service creation if no service ports are defined
+	if workload.Spec.Service == nil || len(workload.Spec.Service.Ports) == 0 {
+		log.FromContext(ctx).V(1).Info("No service ports defined, skipping service creation")
+		return nil
+	}
+
+	service := r.buildService(plan, workload)
+
+	// Set WorkloadPlan as owner for garbage collection
+	if err := ctrl.SetControllerReference(plan, service, r.Scheme); err != nil {
+		return fmt.Errorf("failed to set controller reference: %w", err)
+	}
+
+	// Create or update the service
+	existing := &corev1.Service{}
+	key := types.NamespacedName{Namespace: service.Namespace, Name: service.Name}
+
+	if err := r.Get(ctx, key, existing); err != nil {
+		if client.IgnoreNotFound(err) == nil {
+			// Create new service
+			if err := r.Create(ctx, service); err != nil {
+				return fmt.Errorf("failed to create service: %w", err)
+			}
+			log.FromContext(ctx).Info("Created Service", "name", service.Name)
+		} else {
+			return fmt.Errorf("failed to get service: %w", err)
+		}
+	} else {
+		// Update existing service spec (preserve ClusterIP)
+		service.Spec.ClusterIP = existing.Spec.ClusterIP
+		service.ResourceVersion = existing.ResourceVersion
+		existing.Spec = service.Spec
+		existing.Labels = service.Labels
+		existing.Annotations = service.Annotations
+
+		if err := r.Update(ctx, existing); err != nil {
+			return fmt.Errorf("failed to update service: %w", err)
+		}
+		log.FromContext(ctx).Info("Updated Service", "name", service.Name)
+	}
+
+	return nil
+}
+
+// buildDeployment constructs a Deployment from WorkloadPlan and Workload
+func (r *KubernetesRuntimeReconciler) buildDeployment(plan *scorev1b1.WorkloadPlan, workload *scorev1b1.Workload) *appsv1.Deployment {
+	name := plan.Spec.WorkloadRef.Name
+	namespace := plan.Spec.WorkloadRef.Namespace
+
+	// Default replicas to 1 if not specified
+	replicas := int32(1)
+
+	// Build containers from workload spec
+	containers := make([]corev1.Container, 0, len(workload.Spec.Containers))
+	for containerName, containerSpec := range workload.Spec.Containers {
+		container := corev1.Container{
+			Name:  containerName,
+			Image: containerSpec.Image,
+		}
+
+		// Add environment variables
+		if containerSpec.Variables != nil {
+			for key, value := range containerSpec.Variables {
+				container.Env = append(container.Env, corev1.EnvVar{
+					Name:  key,
+					Value: value,
+				})
+			}
+		}
+
+		// Add resource requirements if specified
+		if containerSpec.Resources != nil {
+			container.Resources = corev1.ResourceRequirements{
+				Requests: make(corev1.ResourceList),
+				Limits:   make(corev1.ResourceList),
+			}
+			// TODO: Parse and set resource requests/limits from containerSpec.Resources
+		}
+
+		containers = append(containers, container)
+	}
+
+	// Build labels
+	labels := map[string]string{
+		"app.kubernetes.io/name":       name,
+		"app.kubernetes.io/instance":   name,
+		"app.kubernetes.io/managed-by": "score-orchestrator",
+		"score.dev/workload":           name,
+	}
+
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			Labels:    labels,
+			Annotations: map[string]string{
+				"score.dev/workload-generation": fmt.Sprintf("%d", workload.Generation),
+				"score.dev/plan-generation":     fmt.Sprintf("%d", plan.Generation),
+			},
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"app.kubernetes.io/name":     name,
+					"app.kubernetes.io/instance": name,
+				},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: labels,
+				},
+				Spec: corev1.PodSpec{
+					Containers: containers,
+				},
+			},
+		},
+	}
+
+	return deployment
+}
+
+// buildService constructs a Service from WorkloadPlan and Workload
+func (r *KubernetesRuntimeReconciler) buildService(plan *scorev1b1.WorkloadPlan, workload *scorev1b1.Workload) *corev1.Service {
+	name := plan.Spec.WorkloadRef.Name
+	namespace := plan.Spec.WorkloadRef.Namespace
+
+	// Build service ports
+	ports := make([]corev1.ServicePort, 0, len(workload.Spec.Service.Ports))
+	for i, port := range workload.Spec.Service.Ports {
+		servicePort := corev1.ServicePort{
+			Name:     fmt.Sprintf("port-%d", i), // Generate name from index
+			Port:     port.Port,
+			Protocol: corev1.ProtocolTCP, // Default to TCP
+		}
+
+		// Set target port - use port number if targetPort is nil
+		if port.TargetPort != nil {
+			servicePort.TargetPort = intstr.FromInt(int(*port.TargetPort))
+		} else {
+			servicePort.TargetPort = intstr.FromInt(int(port.Port))
+		}
+
+		if port.Protocol != "" {
+			servicePort.Protocol = corev1.Protocol(port.Protocol)
+		}
+
+		ports = append(ports, servicePort)
+	}
+
+	// Build labels
+	labels := map[string]string{
+		"app.kubernetes.io/name":       name,
+		"app.kubernetes.io/instance":   name,
+		"app.kubernetes.io/managed-by": "score-orchestrator",
+		"score.dev/workload":           name,
+	}
+
+	service := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			Labels:    labels,
+			Annotations: map[string]string{
+				"score.dev/workload-generation": fmt.Sprintf("%d", workload.Generation),
+				"score.dev/plan-generation":     fmt.Sprintf("%d", plan.Generation),
+			},
+		},
+		Spec: corev1.ServiceSpec{
+			Type:  corev1.ServiceTypeClusterIP,
+			Ports: ports,
+			Selector: map[string]string{
+				"app.kubernetes.io/name":     name,
+				"app.kubernetes.io/instance": name,
+			},
+		},
+	}
+
+	return service
+}
+
+// SetupWithManager sets up the controller with the Manager
+func (r *KubernetesRuntimeReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&scorev1b1.WorkloadPlan{}).
+		Owns(&appsv1.Deployment{}).
+		Owns(&corev1.Service{}).
+		Complete(r)
+}
