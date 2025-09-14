@@ -80,6 +80,49 @@ var _ = Describe("Workload Controller", func() {
 				return k8sClient.Get(context.Background(), client.ObjectKey{Name: testNS.Name}, &corev1.Namespace{})
 			}).Should(Succeed())
 
+			// Create score-system namespace if it doesn't exist
+			scoreSystemNS := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "score-system",
+				},
+			}
+			if err := k8sClient.Create(context.Background(), scoreSystemNS); err != nil && !apierrors.IsAlreadyExists(err) {
+				Expect(err).NotTo(HaveOccurred())
+			}
+
+			// Create minimal orchestrator config ConfigMap
+			orchestratorConfig := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "orchestrator-config",
+					Namespace: "score-system",
+				},
+				Data: map[string]string{
+					"config.yaml": `
+apiVersion: score.dev/v1b1
+kind: OrchestratorConfig
+metadata:
+  name: test-config
+spec:
+  profiles:
+  - name: test-profile
+    backends:
+    - backendId: test-backend
+      runtimeClass: kubernetes
+      priority: 100
+      version: "1.0.0"
+      template:
+        kind: manifests
+        ref: "test-template:latest"
+        values:
+          replicas: 1
+  defaults:
+    profile: test-profile
+  provisioners: []
+`,
+				},
+			}
+			Expect(k8sClient.Create(context.Background(), orchestratorConfig)).To(Succeed())
+
 			// 2) Create Manager with NS-scoped cache and port conflict avoidance
 			mgrCtx, c := context.WithCancel(context.Background())
 			cancel = c
@@ -170,6 +213,15 @@ var _ = Describe("Workload Controller", func() {
 		})
 
 		AfterEach(func() {
+			// Clean up orchestrator config ConfigMap
+			orchestratorConfig := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "orchestrator-config",
+					Namespace: "score-system",
+				},
+			}
+			_ = k8sClient.Delete(context.Background(), orchestratorConfig)
+
 			// 1) Clean shutdown: Delete namespace with Foreground propagation and wait for completion
 			By("Deleting test namespace with Foreground propagation")
 			policy := metav1.DeletePropagationForeground

@@ -2,6 +2,7 @@
 resources:
 - orchestrator-config.yaml
 - score_v1b1_workload.yaml
-- score_v1b1_resourceclaim.yaml
-- score_v1b1_workloadplan.yaml
+# Internal resources - generated automatically by controller
+# - score_v1b1_resourceclaim.yaml
+# - score_v1b1_workloadplan.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples
