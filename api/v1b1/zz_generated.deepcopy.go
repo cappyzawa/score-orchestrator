@@ -1051,6 +1051,16 @@ func (in *WorkloadPlanList) DeepCopyObject() runtime.Object {
 func (in *WorkloadPlanSpec) DeepCopyInto(out *WorkloadPlanSpec) {
 	*out = *in
 	out.WorkloadRef = in.WorkloadRef
+	if in.Template != nil {
+		in, out := &in.Template, &out.Template
+		*out = new(TemplateSpec)
+		(*in).DeepCopyInto(*out)
+	}
+	if in.Values != nil {
+		in, out := &in.Values, &out.Values
+		*out = new(runtime.RawExtension)
+		(*in).DeepCopyInto(*out)
+	}
 	in.Projection.DeepCopyInto(&out.Projection)
 	if in.Bindings != nil {
 		in, out := &in.Bindings, &out.Bindings

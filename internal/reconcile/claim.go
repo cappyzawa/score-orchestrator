@@ -23,6 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
@@ -44,6 +45,9 @@ func upsertResourceClaim(ctx context.Context, c client.Client, workload *scorev1
 	claimName := fmt.Sprintf("%s-%s", workload.Name, key)
 	claim := &scorev1b1.ResourceClaim{}
 
+	log := ctrl.LoggerFrom(ctx).WithValues("claimName", claimName, "workload", workload.Name, "key", key)
+	log.Info("Upserting ResourceClaim")
+
 	// Try to get existing claim
 	err := c.Get(ctx, types.NamespacedName{
 		Name:      claimName,
@@ -51,6 +55,7 @@ func upsertResourceClaim(ctx context.Context, c client.Client, workload *scorev1
 	}, claim)
 
 	if err != nil && !errors.IsNotFound(err) {
+		log.Error(err, "Failed to get ResourceClaim")
 		return fmt.Errorf("failed to get ResourceClaim %s: %w", claimName, err)
 	}
 
@@ -73,6 +78,7 @@ func upsertResourceClaim(ctx context.Context, c client.Client, workload *scorev1
 	}
 
 	if errors.IsNotFound(err) {
+		log.Info("Creating new ResourceClaim")
 		// Create new claim
 		claim = &scorev1b1.ResourceClaim{
 			ObjectMeta: metav1.ObjectMeta{
@@ -88,19 +94,28 @@ func upsertResourceClaim(ctx context.Context, c client.Client, workload *scorev1
 
 		// Set owner reference
 		if err := controllerutil.SetControllerReference(workload, claim, c.Scheme()); err != nil {
+			log.Error(err, "Failed to set owner reference")
 			return fmt.Errorf("failed to set owner reference: %w", err)
 		}
 
 		if err := c.Create(ctx, claim); err != nil {
+			log.Error(err, "Failed to create ResourceClaim")
 			return fmt.Errorf("failed to create ResourceClaim: %w", err)
 		}
+		log.Info("Successfully created ResourceClaim")
 	} else {
+		log.Info("ResourceClaim already exists, checking for updates")
 		// Update existing claim if spec differs
 		if !resourceClaimSpecEqual(claim.Spec, desiredSpec) {
+			log.Info("Updating ResourceClaim spec")
 			claim.Spec = desiredSpec
 			if err := c.Update(ctx, claim); err != nil {
+				log.Error(err, "Failed to update ResourceClaim")
 				return fmt.Errorf("failed to update ResourceClaim: %w", err)
 			}
+			log.Info("Successfully updated ResourceClaim")
+		} else {
+			log.Info("ResourceClaim spec is up to date")
 		}
 	}
 

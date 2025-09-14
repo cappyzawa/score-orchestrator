@@ -18,6 +18,8 @@ package controller
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -31,7 +33,6 @@ import (
 	scorev1b1 "github.com/cappyzawa/score-orchestrator/api/v1b1"
 	"github.com/cappyzawa/score-orchestrator/internal/conditions"
 	"github.com/cappyzawa/score-orchestrator/internal/config"
-	"github.com/cappyzawa/score-orchestrator/internal/meta"
 	"github.com/cappyzawa/score-orchestrator/internal/reconcile"
 	"github.com/cappyzawa/score-orchestrator/internal/selection"
 	"github.com/cappyzawa/score-orchestrator/internal/status"
@@ -55,6 +56,7 @@ type WorkloadReconciler struct {
 // Reconcile handles Workload reconciliation - the single writer of Workload.status
 func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx).WithValues("workload", req.NamespacedName)
+	log.Info("Reconcile called", "namespace", req.Namespace, "name", req.Name)
 
 	// Get the Workload
 	workload := &scorev1b1.Workload{}
@@ -66,6 +68,8 @@ func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		log.Error(err, "Failed to get Workload")
 		return ctrl.Result{}, err
 	}
+
+	log.Info("Processing Workload", "generation", workload.Generation, "resourceVersion", workload.ResourceVersion)
 
 	// Handle deletion
 	if !workload.DeletionTimestamp.IsZero() {
@@ -86,8 +90,11 @@ func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		reason, message)
 
 	if !inputsValid {
-		return r.updateStatusAndReturn(ctx, workload, ctrl.Result{}, nil)
+		log.Info("Inputs validation failed", "reason", reason, "message", message)
+		return r.updateStatusAndReturn(ctx, workload)
 	}
+
+	log.Info("Inputs validated successfully, proceeding to resource claims")
 
 	// Create/update ResourceClaims
 	if err := reconcile.UpsertResourceClaims(ctx, r.Client, workload); err != nil {
@@ -96,6 +103,8 @@ func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
+	log.Info("ResourceClaims upserted successfully")
+
 	// Aggregate binding statuses
 	claims, err := GetResourceClaimsForWorkload(ctx, r.Client, workload)
 	if err != nil {
@@ -103,18 +112,45 @@ func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
+	log.Info("Retrieved ResourceClaims", "count", len(claims))
+
 	agg := status.AggregateClaimStatuses(claims)
 	status.UpdateWorkloadStatusFromAggregation(workload, agg)
 
 	// Create WorkloadPlan if bindings are ready
 	if agg.Ready {
-		runtimeClass := r.determineRuntimeClass(ctx, workload)
-		if err := reconcile.UpsertWorkloadPlan(ctx, r.Client, workload, claims, runtimeClass); err != nil {
+		log.Info("Claims are ready, creating WorkloadPlan")
+		selectedBackend, err := r.selectBackend(ctx, workload)
+		if err != nil {
+			log.Error(err, "Failed to select backend")
+			conditions.SetCondition(&workload.Status.Conditions,
+				conditions.ConditionRuntimeReady,
+				metav1.ConditionFalse,
+				conditions.ReasonRuntimeSelecting,
+				fmt.Sprintf("Backend selection failed: %v", err))
+			return r.updateStatusAndReturn(ctx, workload)
+		}
+
+		if err := reconcile.UpsertWorkloadPlan(ctx, r.Client, workload, claims, selectedBackend); err != nil {
 			log.Error(err, "Failed to upsert WorkloadPlan")
+
+			// Check if this is a projection error (missing outputs)
+			if strings.Contains(err.Error(), "missing required outputs for projection") {
+				conditions.SetCondition(&workload.Status.Conditions,
+					conditions.ConditionRuntimeReady,
+					metav1.ConditionFalse,
+					conditions.ReasonProjectionError,
+					fmt.Sprintf("Cannot create plan: %v", err))
+				r.Recorder.Eventf(workload, "Warning", "ProjectionError", "Missing required resource outputs: %v", err)
+				return r.updateStatusAndReturn(ctx, workload)
+			}
+
 			r.Recorder.Eventf(workload, "Warning", "PlanError", "Failed to create workload plan: %v", err)
 			return ctrl.Result{}, err
 		}
 		r.Recorder.Eventf(workload, "Normal", "PlanCreated", "WorkloadPlan created successfully")
+	} else {
+		log.Info("Claims are not ready yet", "ready", agg.Ready, "reason", agg.Reason, "message", agg.Message)
 	}
 
 	// Update RuntimeReady and endpoint (MVP logic)
@@ -128,7 +164,7 @@ func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		r.Recorder.Event(workload, "Normal", "Ready", "Workload is ready and operational")
 	}
 
-	return r.updateStatusAndReturn(ctx, workload, ctrl.Result{}, nil)
+	return r.updateStatusAndReturn(ctx, workload)
 }
 
 // handleDeletion handles Workload deletion with finalizer cleanup
@@ -173,16 +209,15 @@ func (r *WorkloadReconciler) validateInputsAndPolicy(_ context.Context, workload
 	return true, conditions.ReasonSucceeded, "Workload specification is valid"
 }
 
-// determineRuntimeClass determines the runtime class for the workload
+// selectBackend selects the backend for the workload using deterministic profile selection pipeline
 // ADR-0003: Runtime selection is now based on deterministic profile selection pipeline
-func (r *WorkloadReconciler) determineRuntimeClass(ctx context.Context, workload *scorev1b1.Workload) string {
+func (r *WorkloadReconciler) selectBackend(ctx context.Context, workload *scorev1b1.Workload) (*selection.SelectedBackend, error) {
 	log := ctrl.LoggerFrom(ctx)
 
 	// Load Orchestrator Configuration
 	orchestratorConfig, err := r.ConfigLoader.LoadConfig(ctx)
 	if err != nil {
-		log.Error(err, "Failed to load orchestrator config, using default runtime")
-		return meta.RuntimeClassKubernetes
+		return nil, fmt.Errorf("failed to load orchestrator config: %w", err)
 	}
 
 	// Create ProfileSelector
@@ -191,15 +226,15 @@ func (r *WorkloadReconciler) determineRuntimeClass(ctx context.Context, workload
 	// Select backend using deterministic pipeline
 	selectedBackend, err := selector.SelectBackend(ctx, workload)
 	if err != nil {
-		log.Error(err, "Failed to select backend, using default runtime")
-		return meta.RuntimeClassKubernetes
+		return nil, fmt.Errorf("failed to select backend: %w", err)
 	}
 
 	log.Info("Selected backend for workload",
 		"backend", selectedBackend.BackendID,
-		"runtime", selectedBackend.RuntimeClass)
+		"runtime", selectedBackend.RuntimeClass,
+		"template", fmt.Sprintf("%s:%s", selectedBackend.Template.Kind, selectedBackend.Template.Ref))
 
-	return selectedBackend.RuntimeClass
+	return selectedBackend, nil
 }
 
 // updateRuntimeStatus updates RuntimeReady condition and endpoint (MVP implementation)
@@ -227,7 +262,7 @@ func (r *WorkloadReconciler) updateRuntimeStatus(ctx context.Context, workload *
 }
 
 // updateStatusAndReturn updates the Workload status and returns the result
-func (r *WorkloadReconciler) updateStatusAndReturn(ctx context.Context, workload *scorev1b1.Workload, result ctrl.Result, originalErr error) (ctrl.Result, error) {
+func (r *WorkloadReconciler) updateStatusAndReturn(ctx context.Context, workload *scorev1b1.Workload) (ctrl.Result, error) {
 	if err := r.Status().Update(ctx, workload); err != nil {
 		if apierrors.IsConflict(err) {
 			// Resource version conflict - requeue for retry
@@ -237,7 +272,7 @@ func (r *WorkloadReconciler) updateStatusAndReturn(ctx context.Context, workload
 		ctrl.LoggerFrom(ctx).Error(err, "Failed to update Workload status")
 		return ctrl.Result{}, err
 	}
-	return result, originalErr
+	return ctrl.Result{}, nil
 }
 
 // inputsValidToConditionStatus converts boolean to ConditionStatus

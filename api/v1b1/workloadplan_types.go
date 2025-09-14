@@ -19,6 +19,7 @@ package v1b1
 import (
 	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 // +kubebuilder:object:root=true
@@ -41,8 +42,8 @@ type WorkloadPlanWorkloadRef struct {
 
 // FromBindingOutput references a single output key produced by a binding.
 type FromBindingOutput struct {
-	// BindingKey is the key under Workload.spec.resources (e.g., "db").
-	BindingKey string `json:"bindingKey"`
+	// ClaimKey is the key under Workload.spec.resources (e.g., "db").
+	ClaimKey string `json:"claimKey"`
 	// OutputKey is the output field exported by the binding (e.g., "uri").
 	OutputKey string `json:"outputKey"`
 }
@@ -100,6 +101,10 @@ type WorkloadPlanSpec struct {
 	ObservedWorkloadGeneration int64 `json:"observedWorkloadGeneration"`
 	// RuntimeClass is the selected runtime controller class.
 	RuntimeClass string `json:"runtimeClass"`
+	// Template contains the reference and type information for runtime materialization.
+	Template *TemplateSpec `json:"template,omitempty"`
+	// Values contains the composed template values (defaults ⊕ normalize(Workload) ⊕ outputs).
+	Values *runtime.RawExtension `json:"values,omitempty"`
 	// Projection defines how binding outputs are injected into the workload.
 	Projection WorkloadProjection `json:"projection,omitempty"`
 	// Bindings declares resource requirements to be materialized by the runtime.
