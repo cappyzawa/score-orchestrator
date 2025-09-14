@@ -31,6 +31,9 @@ spec:
     worker:
       image: busybox:latest
       command: ["sleep", "3600"]
+  resources:
+    storage:
+      type: postgres
 ---
 # Test Case 3: User hint - explicit profile annotation
 apiVersion: score.dev/v1b1
@@ -44,3 +47,111 @@ spec:
   containers:
     app:
       image: nginx:latest
+  resources:
+    data:
+      type: postgres
+---
+# Test environments for backend constraint testing
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: test-dev
+  labels:
+    environment: development
+    team: backend
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: test-prod
+  labels:
+    environment: production
+---
+# Test Case 4: Development environment - should select k8s-web-dev backend
+apiVersion: score.dev/v1b1
+kind: Workload
+metadata:
+  name: web-app-dev
+  namespace: test-dev
+  labels:
+    app: web-app
+spec:
+  containers:
+    app:
+      image: "nginx:latest"
+      resources:
+        requests:
+          cpu: "200m"
+          memory: "256Mi"
+  service:
+    ports:
+    - port: 8080
+      protocol: TCP
+  resources:
+    cache:
+      type: redis
+---
+# Test Case 5: Production environment - should select k8s-web-prod backend
+apiVersion: score.dev/v1b1
+kind: Workload
+metadata:
+  name: web-app-prod
+  namespace: test-prod
+  labels:
+    app: web-app
+  annotations:
+    score.dev/requirements: "monitoring"
+spec:
+  containers:
+    app:
+      image: "nginx:latest"
+      resources:
+        requests:
+          cpu: "500m"
+          memory: "1Gi"
+  service:
+    ports:
+    - port: 8080
+      protocol: TCP
+---
+# Test Case 6: Batch workload with resource constraints
+apiVersion: score.dev/v1b1
+kind: Workload
+metadata:
+  name: batch-heavy
+  namespace: test-dev
+  labels:
+    workload-type: batch
+spec:
+  containers:
+    worker:
+      image: "busybox:latest"
+      command: ["sleep", "3600"]
+      resources:
+        requests:
+          cpu: "4000m"
+          memory: "8Gi"
+  resources:
+    queue:
+      type: redis
+---
+# Test Case 7: Feature auto-detection - database connectivity
+apiVersion: score.dev/v1b1
+kind: Workload
+metadata:
+  name: app-with-db
+  namespace: test-dev
+spec:
+  containers:
+    app:
+      image: "myapp:latest"
+      resources:
+        requests:
+          cpu: "100m"
+          memory: "128Mi"
+  service:
+    ports:
+    - port: 3000
+  resources:
+    database:
+      type: postgres
