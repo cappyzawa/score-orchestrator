@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
@@ -399,6 +400,130 @@ func TestNormalizeWorkload(t *testing.T) {
 				"containers": map[string]interface{}{
 					"app": map[string]interface{}{
 						"image": "hello-world",
+					},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := normalizeWorkload(tt.workload)
+
+			// JSON経由で型の一貫性を保証
+			resultJSON, err := json.Marshal(result)
+			if err != nil {
+				t.Fatalf("failed to marshal result: %v", err)
+			}
+
+			expectedJSON, err := json.Marshal(tt.expected)
+			if err != nil {
+				t.Fatalf("failed to marshal expected: %v", err)
+			}
+
+			var resultNormalized, expectedNormalized map[string]interface{}
+			if err := json.Unmarshal(resultJSON, &resultNormalized); err != nil {
+				t.Fatalf("failed to unmarshal result: %v", err)
+			}
+			if err := json.Unmarshal(expectedJSON, &expectedNormalized); err != nil {
+				t.Fatalf("failed to unmarshal expected: %v", err)
+			}
+
+			if !equalMaps(resultNormalized, expectedNormalized) {
+				t.Errorf("expected %+v, got %+v", expectedNormalized, resultNormalized)
+			}
+		})
+	}
+}
+
+func TestNormalizeWorkloadWithResources(t *testing.T) {
+	tests := []struct {
+		name     string
+		workload *scorev1b1.Workload
+		expected map[string]interface{}
+	}{
+		{
+			name: "workload with resources",
+			workload: &scorev1b1.Workload{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-app",
+					Namespace: "default",
+				},
+				Spec: scorev1b1.WorkloadSpec{
+					Containers: map[string]scorev1b1.ContainerSpec{
+						"main": {
+							Image: "nginx",
+						},
+					},
+					Resources: map[string]scorev1b1.ResourceSpec{
+						"database": {
+							Type:  "postgres",
+							Class: ptr.To("large"),
+							Params: &apiextv1.JSON{
+								Raw: []byte(`{"version": "13", "storage": "100Gi"}`),
+							},
+						},
+						"cache": {
+							Type: "redis",
+						},
+					},
+				},
+			},
+			expected: map[string]interface{}{
+				"name":      "test-app",
+				"namespace": "default",
+				"containers": map[string]interface{}{
+					"main": map[string]interface{}{
+						"image": "nginx",
+					},
+				},
+				"resources": map[string]interface{}{
+					"database": map[string]interface{}{
+						"type":  "postgres",
+						"class": "large",
+						"params": map[string]interface{}{
+							"version": "13",
+							"storage": "100Gi",
+						},
+					},
+					"cache": map[string]interface{}{
+						"type": "redis",
+					},
+				},
+			},
+		},
+		{
+			name: "workload with invalid params JSON",
+			workload: &scorev1b1.Workload{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-app",
+				},
+				Spec: scorev1b1.WorkloadSpec{
+					Containers: map[string]scorev1b1.ContainerSpec{
+						"main": {Image: "nginx"},
+					},
+					Resources: map[string]scorev1b1.ResourceSpec{
+						"broken": {
+							Type: "postgres",
+							Params: &apiextv1.JSON{
+								Raw: []byte(`{invalid json`), // Invalid JSON should be ignored
+							},
+						},
+					},
+				},
+			},
+			expected: map[string]interface{}{
+				"name":      "test-app",
+				"namespace": "",
+				"containers": map[string]interface{}{
+					"main": map[string]interface{}{
+						"image": "nginx",
+					},
+				},
+				"resources": map[string]interface{}{
+					"broken": map[string]interface{}{
+						"type": "postgres",
+						// params should not be included due to invalid JSON
 					},
 				},
 			},
