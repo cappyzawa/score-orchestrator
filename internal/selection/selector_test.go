@@ -159,15 +159,15 @@ func TestProfileSelector_SelectBackend(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "selector matching with combined labels",
+			name: "selector matching with workload labels only (ADR-0004)",
 			config: &scorev1b1.OrchestratorConfig{
 				Spec: scorev1b1.OrchestratorConfigSpec{
 					Profiles: []scorev1b1.ProfileSpec{
 						{
-							Name: "dev-service",
+							Name: "batch-service",
 							Backends: []scorev1b1.BackendSpec{
 								{
-									BackendId:    "k8s-dev",
+									BackendId:    "k8s-batch",
 									RuntimeClass: "kubernetes",
 									Priority:     50,
 									Version:      "1.0.0",
@@ -179,9 +179,9 @@ func TestProfileSelector_SelectBackend(t *testing.T) {
 						Selectors: []scorev1b1.SelectorSpec{
 							{
 								MatchLabels: map[string]string{
-									"environment": "development",
+									"workload-type": "batch",
 								},
-								Profile: "dev-service",
+								Profile: "batch-service",
 							},
 						},
 					},
@@ -192,20 +192,19 @@ func TestProfileSelector_SelectBackend(t *testing.T) {
 					Name:      "test-workload",
 					Namespace: "default",
 					Labels: map[string]string{
-						"app": "myapp",
+						"app":           "myapp",
+						"workload-type": "batch",
 					},
 				},
 			},
 			namespace: &corev1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "default",
-					Labels: map[string]string{
-						"environment": "development",
-					},
+					// No environment labels - ADR-0004 cluster-level environment
 				},
 			},
 			wantBackend: &SelectedBackend{
-				BackendID:    "k8s-dev",
+				BackendID:    "k8s-batch",
 				RuntimeClass: "kubernetes",
 				Priority:     50,
 				Version:      "1.0.0",
@@ -391,10 +390,10 @@ func TestProfileSelector_BackendFiltering(t *testing.T) {
 		expectError bool
 	}{
 		{
-			name: "selector filtering",
+			name: "workload-based selector filtering (ADR-0004)",
 			backends: []scorev1b1.BackendSpec{
 				{
-					BackendId:    "prod-only",
+					BackendId:    "batch-backend",
 					RuntimeClass: "kubernetes",
 					Priority:     100,
 					Version:      "1.0.0",
@@ -402,14 +401,14 @@ func TestProfileSelector_BackendFiltering(t *testing.T) {
 						Selectors: []scorev1b1.SelectorSpec{
 							{
 								MatchLabels: map[string]string{
-									"environment": "production",
+									"workload-type": "batch",
 								},
 							},
 						},
 					},
 				},
 				{
-					BackendId:    "dev-only",
+					BackendId:    "web-backend",
 					RuntimeClass: "kubernetes",
 					Priority:     50,
 					Version:      "1.0.0",
@@ -417,7 +416,7 @@ func TestProfileSelector_BackendFiltering(t *testing.T) {
 						Selectors: []scorev1b1.SelectorSpec{
 							{
 								MatchLabels: map[string]string{
-									"environment": "development",
+									"app-type": "web",
 								},
 							},
 						},
@@ -428,17 +427,18 @@ func TestProfileSelector_BackendFiltering(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-workload",
 					Namespace: "default",
+					Labels: map[string]string{
+						"workload-type": "batch",
+					},
 				},
 			},
 			namespace: &corev1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "default",
-					Labels: map[string]string{
-						"environment": "development",
-					},
+					// No environment labels - ADR-0004 cluster-level environment
 				},
 			},
-			expectedId: "dev-only",
+			expectedId: "batch-backend",
 		},
 		{
 			name: "feature requirement filtering",
@@ -477,7 +477,7 @@ func TestProfileSelector_BackendFiltering(t *testing.T) {
 			name: "no candidates after filtering",
 			backends: []scorev1b1.BackendSpec{
 				{
-					BackendId:    "prod-only",
+					BackendId:    "special-only",
 					RuntimeClass: "kubernetes",
 					Priority:     100,
 					Version:      "1.0.0",
@@ -485,7 +485,7 @@ func TestProfileSelector_BackendFiltering(t *testing.T) {
 						Selectors: []scorev1b1.SelectorSpec{
 							{
 								MatchLabels: map[string]string{
-									"environment": "production",
+									"special-workload": "true",
 								},
 							},
 						},
@@ -496,14 +496,12 @@ func TestProfileSelector_BackendFiltering(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-workload",
 					Namespace: "default",
+					// No special-workload label - won't match backend
 				},
 			},
 			namespace: &corev1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "default",
-					Labels: map[string]string{
-						"environment": "development", // doesn't match prod-only
-					},
 				},
 			},
 			expectError: true,

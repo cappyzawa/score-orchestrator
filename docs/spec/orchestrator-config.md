@@ -13,6 +13,17 @@ The **Orchestrator Configuration** is a non-CRD artifact that defines:
 
 This configuration replaces the removed `PlatformPolicy` CRD and provides platform operators with flexible, declarative control over workload deployment strategies.
 
+### Cluster-Level Environment Model (ADR-0004)
+
+As of ADR-0004, this configuration operates under a **One Cluster, One Environment** model:
+
+- **Environment context** is defined at the **cluster level**, not through labels
+- **Backend selection** is based solely on workload characteristics (profile, features, resources)
+- **Namespace labels** are not used for backend selection
+- Each cluster represents exactly one environment (dev, staging, prod)
+
+This simplification eliminates complex environment-based label matching and aligns with common operational patterns where organizations maintain separate clusters per environment.
+
 ### Distribution Methods
 
 The configuration can be distributed as either:
@@ -70,7 +81,7 @@ backends:
   priority: integer              # Selection priority (higher = preferred)
   version: string                # Backend version (semver recommended)
   constraints:                   # ConstraintsSpec
-    selectors: []                # Array of SelectorSpec
+    selectors: []                # Array of SelectorSpec (workload labels only, per ADR-0004)
     features: []                 # Array of required features
     regions: []                  # Array of allowed regions
     resources:                   # ResourceConstraints
@@ -219,16 +230,18 @@ Kubernetes-style label selectors for conditional configuration.
 
 ```yaml
 selectors:
-- matchLabels:                   # Map of exact label matches
-    environment: string
-    team: string
-    region: string
+- matchLabels:                   # Map of exact label matches (workload labels only)
+    workload-type: string        # Example: workload characteristic
+    app-tier: string             # Example: application tier
+    team: string                 # Example: organizational label (not for backend selection)
   matchExpressions: []           # Array of label selector requirements
   profile: string                # Profile to use when selector matches
   constraints:                   # Additional constraints
     features: []
     regions: []
 ```
+
+**Note (ADR-0004):** Remove `environment`-based selectors. Use workload characteristics like `workload-type: batch` instead of `environment: development`.
 
 ### Example Defaults Configuration
 
@@ -247,7 +260,14 @@ defaults:
     profile: batch-job           # Database maintenance jobs
 ```
 
-**Label evaluation scope (normative):** Selectors are evaluated against `Workload.metadata.labels` only. Per ADR-0004 (One Cluster, One Environment Model), environment-based selection is eliminated in favor of cluster-level environment definition.
+**Label evaluation scope (normative, ADR-0004):** 
+- Selectors are evaluated against **`Workload.metadata.labels` only**
+- **Namespace labels are ignored** for all selection logic
+- Environment-based selectors (e.g., `environment: production`) are not supported
+- Each cluster represents exactly one environment
+- Use workload characteristics instead: `workload-type`, `app-tier`, `component`, etc.
+
+**Migration Note:** Replace environment-based selectors with workload characteristic-based ones when upgrading configurations.
 
 **Selector precedence (normative):** `defaults.selectors[]` is evaluated in document order. The **first** matching selector wins; no further selectors are evaluated. `matchLabels` and `matchExpressions` are ANDed.
 
