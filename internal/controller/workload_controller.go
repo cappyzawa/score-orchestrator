@@ -33,6 +33,7 @@ import (
 	scorev1b1 "github.com/cappyzawa/score-orchestrator/api/v1b1"
 	"github.com/cappyzawa/score-orchestrator/internal/conditions"
 	"github.com/cappyzawa/score-orchestrator/internal/config"
+	"github.com/cappyzawa/score-orchestrator/internal/endpoint"
 	"github.com/cappyzawa/score-orchestrator/internal/reconcile"
 	"github.com/cappyzawa/score-orchestrator/internal/selection"
 	"github.com/cappyzawa/score-orchestrator/internal/status"
@@ -41,9 +42,10 @@ import (
 // WorkloadReconciler reconciles a Workload object
 type WorkloadReconciler struct {
 	client.Client
-	Scheme       *runtime.Scheme
-	Recorder     record.EventRecorder
-	ConfigLoader config.ConfigLoader
+	Scheme          *runtime.Scheme
+	Recorder        record.EventRecorder
+	ConfigLoader    config.ConfigLoader
+	EndpointDeriver *endpoint.EndpointDeriver
 }
 
 // +kubebuilder:rbac:groups=score.dev,resources=workloads,verbs=get;list;watch;update;patch
@@ -237,14 +239,24 @@ func (r *WorkloadReconciler) selectBackend(ctx context.Context, workload *scorev
 	return selectedBackend, nil
 }
 
-// updateRuntimeStatus updates RuntimeReady condition and endpoint (MVP implementation)
+// updateRuntimeStatus updates RuntimeReady condition and endpoint using WorkloadPlan templates
 // ADR-0003: Endpoint derivation is now based on WorkloadPlan templates
 func (r *WorkloadReconciler) updateRuntimeStatus(ctx context.Context, workload *scorev1b1.Workload) {
-	// TODO: Implement template-based endpoint derivation from WorkloadPlan
+	log := ctrl.LoggerFrom(ctx)
 
 	// Check if we have a WorkloadPlan (indicates runtime is being engaged)
 	plan, err := GetWorkloadPlanForWorkload(ctx, r.Client, workload)
-	if err != nil || plan == nil {
+	if err != nil {
+		log.Error(err, "Failed to get WorkloadPlan")
+		conditions.SetCondition(&workload.Status.Conditions,
+			conditions.ConditionRuntimeReady,
+			metav1.ConditionFalse,
+			conditions.ReasonRuntimeSelecting,
+			"Failed to retrieve workload plan")
+		return
+	}
+
+	if plan == nil {
 		conditions.SetCondition(&workload.Status.Conditions,
 			conditions.ConditionRuntimeReady,
 			metav1.ConditionFalse,
@@ -253,12 +265,34 @@ func (r *WorkloadReconciler) updateRuntimeStatus(ctx context.Context, workload *
 		return
 	}
 
-	// Plan exists, runtime is provisioning
+	// Derive endpoint from WorkloadPlan using EndpointDeriver
+	derivedEndpoint, err := r.EndpointDeriver.DeriveEndpoint(ctx, workload, plan)
+	if err != nil {
+		log.Error(err, "Failed to derive endpoint")
+		conditions.SetCondition(&workload.Status.Conditions,
+			conditions.ConditionRuntimeReady,
+			metav1.ConditionFalse,
+			conditions.ReasonProjectionError,
+			fmt.Sprintf("Failed to derive endpoint: %v", err))
+		return
+	}
+
+	// Update endpoint in status if derived
+	if derivedEndpoint != "" {
+		workload.Status.Endpoint = &derivedEndpoint
+		log.Info("Derived endpoint", "endpoint", derivedEndpoint)
+	}
+
+	// For MVP, assume runtime is provisioning when plan exists
+	// In a full implementation, this would check actual runtime status
 	conditions.SetCondition(&workload.Status.Conditions,
 		conditions.ConditionRuntimeReady,
 		metav1.ConditionFalse,
 		conditions.ReasonRuntimeProvisioning,
 		"Runtime is provisioning workload")
+
+	// TODO: Add logic to detect when runtime is actually ready
+	// This would involve checking runtime-specific resources and their status
 }
 
 // updateStatusAndReturn updates the Workload status and returns the result
