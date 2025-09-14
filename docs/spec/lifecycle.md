@@ -304,8 +304,45 @@ kubectl get events --field-selector involvedObject.kind=Workload
 
 ### Endpoint population & aggregation
 
-- Runtime determines an endpoint (if any) based on the chosen platform.
-- Orchestrator reflects that value into `Workload.status.endpoint`.
-- Only the Orchestrator updates `Workload.status`. Runtimes and Provisioners do not write there.
+The Orchestrator derives endpoints using template-based logic with service port prioritization:
+
+#### Endpoint Derivation Process
+
+1. **Template-based computation**: Check WorkloadPlan template configuration for endpoint patterns
+2. **Service port prioritization**: Select the best port using Score specification-compliant logic:
+   - **HTTPS ports** (443, 8443) - Highest priority
+   - **HTTP ports** (80, 8080) - Medium priority
+   - **Other ports** - Lower priority (first port selected)
+3. **Canonical URL generation**: Generate normalized URLs with proper scheme and hostname
+4. **Status reflection**: Update `Workload.status.endpoint` with the derived canonical endpoint
+
+#### Port Selection Rules
+
+Since Score's `ServicePort` spec includes only `port` and `protocol` fields (no named ports), the Orchestrator determines the appropriate scheme based on port number characteristics:
+
+```go
+// Port-based HTTPS detection
+func isHTTPSPort(port int32) bool {
+    return port == 443 || port == 8443
+}
+
+// Port-based HTTP detection
+func isHTTPPort(port int32) bool {
+    return port == 80 || port == 8080
+}
+```
+
+#### URL Normalization
+
+- **Scheme selection**: Determined by port characteristics (HTTPS > HTTP)
+- **Hostname**: Generated as `{workload.name}.{workload.namespace}.svc.cluster.local`
+- **Port handling**: Standard ports (80, 443) are omitted; non-standard ports are included
+- **HTTPS preference**: When multiple ports are available, HTTPS ports are prioritized
+
+#### Status Contract
+
+- Only the **Orchestrator** updates `Workload.status.endpoint`
+- Runtimes and Provisioners do not write to Workload status
+- Single canonical endpoint is exposed (no multiple endpoints)
 
 This lifecycle ensures that users have a simple, consistent interface while platforms maintain full control over resource provisioning and workload execution across diverse runtime environments.

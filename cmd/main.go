@@ -39,6 +39,7 @@ import (
 	scorev1b1 "github.com/cappyzawa/score-orchestrator/api/v1b1"
 	"github.com/cappyzawa/score-orchestrator/internal/config"
 	"github.com/cappyzawa/score-orchestrator/internal/controller"
+	"github.com/cappyzawa/score-orchestrator/internal/endpoint"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -200,10 +201,11 @@ func main() {
 	configLoader := config.NewConfigMapLoader(clientset, config.DefaultLoaderOptions())
 
 	if err := (&controller.WorkloadReconciler{
-		Client:       mgr.GetClient(),
-		Scheme:       mgr.GetScheme(),
-		Recorder:     mgr.GetEventRecorderFor("workload-controller"),
-		ConfigLoader: configLoader,
+		Client:          mgr.GetClient(),
+		Scheme:          mgr.GetScheme(),
+		Recorder:        mgr.GetEventRecorderFor("workload-controller"),
+		ConfigLoader:    configLoader,
+		EndpointDeriver: endpoint.NewEndpointDeriver(mgr.GetClient()),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Workload")
 		os.Exit(1)

@@ -5,6 +5,8 @@ metadata:
   labels:
     app.kubernetes.io/name: kbinit
     app.kubernetes.io/managed-by: kustomize
+    environment: development
+    team: backend
   name: workload-sample
   namespace: score-system
 spec:
@@ -75,6 +77,8 @@ metadata:
   namespace: test-dev
   labels:
     app: web-app
+    environment: development
+    team: backend
 spec:
   containers:
     app:
@@ -99,6 +103,7 @@ metadata:
   namespace: test-prod
   labels:
     app: web-app
+    environment: production
   annotations:
     score.dev/requirements: "monitoring"
 spec:
@@ -141,6 +146,9 @@ kind: Workload
 metadata:
   name: app-with-db
   namespace: test-dev
+  labels:
+    environment: development
+    team: backend
 spec:
   containers:
     app:
