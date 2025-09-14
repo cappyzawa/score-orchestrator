@@ -24,7 +24,6 @@ import (
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -68,7 +67,7 @@ func NewProfileSelector(config *scorev1b1.OrchestratorConfig, k8sClient client.C
 // 3. Backend Selection (deterministic sorting by priority → version → backendId)
 func (s *profileSelector) SelectBackend(ctx context.Context, workload *scorev1b1.Workload) (*SelectedBackend, error) {
 	// 1. Profile Selection
-	profileName, err := s.selectProfile(ctx, workload)
+	profileName, err := s.selectProfile(workload)
 	if err != nil {
 		return nil, fmt.Errorf("profile selection failed: %w", err)
 	}
@@ -87,10 +86,7 @@ func (s *profileSelector) SelectBackend(ctx context.Context, workload *scorev1b1
 	}
 
 	// 2. Backend Filtering
-	candidates, err := s.filterBackends(ctx, workload, selectedProfile.Backends)
-	if err != nil {
-		return nil, fmt.Errorf("backend filtering failed: %w", err)
-	}
+	candidates := s.filterBackends(workload, selectedProfile.Backends)
 
 	if len(candidates) == 0 {
 		return nil, fmt.Errorf("no suitable backend candidates found for profile %q", profileName)
@@ -109,7 +105,7 @@ func (s *profileSelector) SelectBackend(ctx context.Context, workload *scorev1b1
 }
 
 // selectProfile implements the profile selection pipeline
-func (s *profileSelector) selectProfile(ctx context.Context, workload *scorev1b1.Workload) (string, error) {
+func (s *profileSelector) selectProfile(workload *scorev1b1.Workload) (string, error) {
 	// 1. User hint evaluation: score.dev/profile annotation on Workload
 	if profileHint, exists := workload.Annotations["score.dev/profile"]; exists && profileHint != "" {
 		// Validate that the hinted profile exists
@@ -127,11 +123,8 @@ func (s *profileSelector) selectProfile(ctx context.Context, workload *scorev1b1
 		return derivedProfile, nil
 	}
 
-	// 3. Selector matching: Apply defaults.selectors[] based on namespace/labels
-	selectedProfile, err := s.selectProfileFromSelectors(ctx, workload)
-	if err != nil {
-		return "", fmt.Errorf("selector matching failed: %w", err)
-	}
+	// 3. Selector matching: Apply defaults.selectors[] based on workload labels only
+	selectedProfile := s.selectProfileFromSelectors(workload)
 	if selectedProfile != "" {
 		return selectedProfile, nil
 	}
@@ -172,24 +165,22 @@ func (s *profileSelector) deriveProfileFromWorkload(workload *scorev1b1.Workload
 }
 
 // selectProfileFromSelectors evaluates defaults.selectors[] in document order
-func (s *profileSelector) selectProfileFromSelectors(ctx context.Context, workload *scorev1b1.Workload) (string, error) {
-	// Get namespace labels
-	namespace := &corev1.Namespace{}
-	if err := s.client.Get(ctx, client.ObjectKey{Name: workload.Namespace}, namespace); err != nil {
-		return "", fmt.Errorf("failed to get namespace %q: %w", workload.Namespace, err)
+// Based on ADR-0004: Only use Workload labels, not namespace labels
+func (s *profileSelector) selectProfileFromSelectors(workload *scorev1b1.Workload) string {
+	// Use only Workload labels (cluster-level environment model per ADR-0004)
+	workloadLabels := workload.Labels
+	if workloadLabels == nil {
+		workloadLabels = make(map[string]string)
 	}
-
-	// Combine labels: Workload ∪ Namespace (Workload takes precedence)
-	combinedLabels := combineLabels(workload.Labels, namespace.Labels)
 
 	// Evaluate selectors in document order - first match wins
 	for _, selector := range s.config.Spec.Defaults.Selectors {
-		if s.selectorMatches(selector, combinedLabels) && selector.Profile != "" {
-			return selector.Profile, nil
+		if s.selectorMatches(selector, workloadLabels) && selector.Profile != "" {
+			return selector.Profile
 		}
 	}
 
-	return "", nil
+	return ""
 }
 
 // selectorMatches checks if a selector matches the given labels
@@ -209,20 +200,19 @@ func (s *profileSelector) selectorMatches(selector scorev1b1.SelectorSpec, targe
 }
 
 // filterBackends applies filtering to backend candidates
-func (s *profileSelector) filterBackends(ctx context.Context, workload *scorev1b1.Workload, backends []scorev1b1.BackendSpec) ([]scorev1b1.BackendSpec, error) {
+// Based on ADR-0004: Simplified filtering without namespace labels
+func (s *profileSelector) filterBackends(workload *scorev1b1.Workload, backends []scorev1b1.BackendSpec) []scorev1b1.BackendSpec {
 	candidates := make([]scorev1b1.BackendSpec, 0, len(backends))
 
-	// Get namespace labels for constraint evaluation
-	namespace := &corev1.Namespace{}
-	if err := s.client.Get(ctx, client.ObjectKey{Name: workload.Namespace}, namespace); err != nil {
-		return nil, fmt.Errorf("failed to get namespace %q: %w", workload.Namespace, err)
+	// Use only Workload labels (cluster-level environment model per ADR-0004)
+	workloadLabels := workload.Labels
+	if workloadLabels == nil {
+		workloadLabels = make(map[string]string)
 	}
 
-	combinedLabels := combineLabels(workload.Labels, namespace.Labels)
-
 	for _, backend := range backends {
-		// Apply environment selectors (skip if no constraints)
-		if backend.Constraints != nil && !s.backendSelectorsMatch(backend.Constraints.Selectors, combinedLabels) {
+		// Apply backend selectors using only workload labels (skip if no constraints)
+		if backend.Constraints != nil && !s.backendSelectorsMatch(backend.Constraints.Selectors, workloadLabels) {
 			continue
 		}
 
@@ -240,7 +230,7 @@ func (s *profileSelector) filterBackends(ctx context.Context, workload *scorev1b
 		candidates = append(candidates, backend)
 	}
 
-	return candidates, nil
+	return candidates
 }
 
 // backendSelectorsMatch checks if backend constraint selectors match

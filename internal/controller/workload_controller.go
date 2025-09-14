@@ -55,7 +55,6 @@ type WorkloadReconciler struct {
 // +kubebuilder:rbac:groups=score.dev,resources=resourceclaims/status,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
-// +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
 
 // Reconcile handles Workload reconciliation - the single writer of Workload.status
 func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -204,9 +203,7 @@ func (r *WorkloadReconciler) handleDeletion(ctx context.Context, workload *score
 // validateInputsAndPolicy validates workload inputs and applies platform policy
 func (r *WorkloadReconciler) validateInputsAndPolicy(_ context.Context, workload *scorev1b1.Workload) (bool, string, string) {
 	// For MVP: basic validation (CRD-level validation handles most cases)
-	if len(workload.Spec.Resources) == 0 {
-		return false, conditions.ReasonSpecInvalid, "Workload must define at least one resource"
-	}
+	// Resources are optional - workloads can be stateless without dependencies
 
 	// ADR-0003: Policy validation is now handled via Orchestrator Config + Admission
 	// For MVP, basic spec validation is sufficient
