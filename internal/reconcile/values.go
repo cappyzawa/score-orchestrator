@@ -111,6 +111,27 @@ func normalizeWorkload(workload *scorev1b1.Workload) map[string]interface{} {
 		result["service"] = service
 	}
 
+	// Normalize resources
+	if len(workload.Spec.Resources) > 0 {
+		resources := make(map[string]interface{})
+		for key, resource := range workload.Spec.Resources {
+			resourceMap := map[string]interface{}{
+				"type": resource.Type,
+			}
+			if resource.Class != nil {
+				resourceMap["class"] = *resource.Class
+			}
+			if resource.Params != nil {
+				var params interface{}
+				if err := json.Unmarshal(resource.Params.Raw, &params); err == nil {
+					resourceMap["params"] = params
+				}
+			}
+			resources[key] = resourceMap
+		}
+		result["resources"] = resources
+	}
+
 	// Add workload metadata
 	result["name"] = workload.Name
 	result["namespace"] = workload.Namespace
