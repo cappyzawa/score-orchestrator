@@ -1,38 +1,108 @@
 name: E2E Tests
 
 on:
+  # Run on commits to main (docs/md changes are ignored)
   push:
+    branches: [main]
     paths-ignore:
-      - 'docs/**'
-      - '*.md'
-  pull_request:
-    paths-ignore:
-      - 'docs/**'
-      - '*.md'
+    - 'docs/**'
+    - '*.md'
+  # Run when a new comment is added on issues/PRs
+  issue_comment:
+    types: [created]
+
+# Avoid duplicate/parallel E2E runs for the same target
+concurrency:
+  group: e2e-${{ github.event_name }}-${{ github.ref || github.event.issue.number }}
+  cancel-in-progress: true
 
 jobs:
   test-e2e:
     name: Run on Ubuntu
+
+    # Allow only:
+    # - push to main
+    # - a PR comment containing "/run-e2e" from members/owners/collaborators
+    if: >
+      github.event_name == 'push' || (
+        github.event_name == 'issue_comment' &&
+        github.event.issue.pull_request &&
+        contains(github.event.comment.body, '/run-e2e') &&
+        (
+          github.event.comment.author_association == 'MEMBER' ||
+          github.event.comment.author_association == 'OWNER'  ||
+          github.event.comment.author_association == 'COLLABORATOR'
+        )
+      )
+
     runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    # Minimal permissions (write is needed only to post a result comment)
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: write
+
     steps:
-      - name: Clone the code
-        uses: actions/checkout@v4
+    - name: Determine target ref (PR merge or current)
+      id: target
+      run: |
+        # For a PR comment, test the merge ref for safety.
+        # For push, use the current ref.
+        if [ "${{ github.event_name }}" = "issue_comment" ]; then
+          echo "ref=refs/pull/${{ github.event.issue.number }}/merge" >> "$GITHUB_OUTPUT"
+        else
+          echo "ref=${{ github.ref }}" >> "$GITHUB_OUTPUT"
+        fi
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
+    - name: Clone the code
+      uses: actions/checkout@v4
+      with:
+        # Use PR merge ref for comment-triggered runs
+        ref: ${{ steps.target.outputs.ref }}
+        fetch-depth: 0
 
-      - name: Install the latest version of kind
-        run: |
-          curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-amd64
-          chmod +x ./kind
-          sudo mv ./kind /usr/local/bin/kind
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
+        # Enable built-in module cache to speed up builds
+        cache: true
+        cache-dependency-path: go.sum
 
-      - name: Verify kind installation
-        run: kind version
+    - name: Install the latest version of kind
+      run: |
+        # NOTE: pin a version for reproducibility if needed
+        curl -fsSL -o ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-amd64
+        chmod +x ./kind
+        sudo mv ./kind /usr/local/bin/kind
 
-      - name: Running Test e2e
-        run: |
-          go mod tidy
-          make test-e2e
+    - name: Verify kind installation
+      run: kind version
+
+    - name: Running Test e2e
+      id: e2e
+      run: |
+        # Keeping tidy for CI parity with local runs (optional in CI)
+        go mod tidy
+        make test-e2e
+
+    - name: Report back to PR
+      # Leave a result comment only when triggered by a PR comment
+      if: github.event_name == 'issue_comment'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const outcome = "${{ job.status }}";
+          const ref = "${{ steps.target.outputs.ref }}";
+          const url = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
+          const body = outcome === "success"
+            ? `✅ E2E passed on \`${ref}\` — [view run](${url})`
+            : `❌ E2E failed on \`${ref}\` — [view run](${url})`;
+          await github.rest.issues.createComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+            body
+          });
