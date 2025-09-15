@@ -258,35 +258,35 @@ spec:
           status:
             description: status defines the observed state of Workload
             properties:
-              bindings:
-                description: Bindings provide a summary of resource binding statuses
+              claims:
+                description: Claims provide a summary of resource claim statuses
                 items:
-                  description: BindingSummary provides a summary of a resource binding
+                  description: ClaimSummary provides a summary of a resource claim
                     status
                   properties:
                     key:
-                      description: Key identifies the resource binding
+                      description: Key identifies the resource claim
                       minLength: 1
                       type: string
                     message:
                       description: Message provides a human-readable description of
-                        the binding status
+                        the claim status
                       type: string
                     outputsAvailable:
-                      description: OutputsAvailable indicates whether the binding
-                        outputs are available
+                      description: OutputsAvailable indicates whether the claim outputs
+                        are available
                       type: boolean
                     phase:
-                      description: Phase indicates the current phase of the binding
+                      description: Phase indicates the current phase of the claim
                       enum:
                       - Pending
-                      - Binding
+                      - Claiming
                       - Bound
                       - Failed
                       type: string
                     reason:
                       description: Reason provides a programmatic identifier for the
-                        binding status
+                        claim status
                       type: string
                   required:
                   - key

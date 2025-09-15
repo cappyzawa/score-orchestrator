@@ -43,8 +43,8 @@ type ReconcileErrorCategory string
 const (
 	// ErrorCategoryValidation indicates input validation errors
 	ErrorCategoryValidation ReconcileErrorCategory = "Validation"
-	// ErrorCategoryBinding indicates resource binding errors
-	ErrorCategoryBinding ReconcileErrorCategory = "Binding"
+	// ErrorCategoryClaim indicates resource claiming errors
+	ErrorCategoryClaim ReconcileErrorCategory = "Claim"
 	// ErrorCategoryProjection indicates workload projection errors
 	ErrorCategoryProjection ReconcileErrorCategory = "Projection"
 	// ErrorCategoryRuntime indicates runtime selection/provisioning errors

@@ -193,25 +193,25 @@ type WorkloadSpec struct {
 	Resources map[string]ResourceSpec `json:"resources,omitempty"`
 }
 
-// BindingSummary provides a summary of a resource binding status
-type BindingSummary struct {
-	// Key identifies the resource binding
+// ClaimSummary provides a summary of a resource claim status
+type ClaimSummary struct {
+	// Key identifies the resource claim
 	// +kubebuilder:validation:MinLength=1
 	Key string `json:"key"`
 
-	// Phase indicates the current phase of the binding
-	// +kubebuilder:validation:Enum=Pending;Binding;Bound;Failed
+	// Phase indicates the current phase of the claim
+	// +kubebuilder:validation:Enum=Pending;Claiming;Bound;Failed
 	Phase ResourceClaimPhase `json:"phase"`
 
-	// Reason provides a programmatic identifier for the binding status
+	// Reason provides a programmatic identifier for the claim status
 	// +optional
 	Reason string `json:"reason,omitempty"`
 
-	// Message provides a human-readable description of the binding status
+	// Message provides a human-readable description of the claim status
 	// +optional
 	Message string `json:"message,omitempty"`
 
-	// OutputsAvailable indicates whether the binding outputs are available
+	// OutputsAvailable indicates whether the claim outputs are available
 	// +optional
 	OutputsAvailable bool `json:"outputsAvailable,omitempty"`
 }
@@ -234,9 +234,9 @@ type WorkloadStatus struct {
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 
-	// Bindings provide a summary of resource binding statuses
+	// Claims provide a summary of resource claim statuses
 	// +optional
-	Bindings []BindingSummary `json:"bindings,omitempty"`
+	Claims []ClaimSummary `json:"claims,omitempty"`
 }
 
 // +kubebuilder:object:root=true

@@ -34,7 +34,7 @@ User submits a `Workload` resource via `kubectl apply` or equivalent API call.
 2. **Policy Application**: Reads **Orchestrator Config** (ConfigMap/OCI) and applies Admission rules
 3. **Status Initialization**: Sets initial conditions:
    - `InputsValid=Unknown` (validation in progress)
-   - `ClaimsReady=False` (no bindings created yet)  
+   - `ClaimsReady=False` (no claims created yet)  
    - `RuntimeReady=False` (runtime not engaged yet)
    - `Ready=False` (derived from above conditions)
 
@@ -59,33 +59,33 @@ Each `ResourceClaim` follows its own state progression:
 
 ```
 ResourceClaim Phase Transitions:
-Pending → Binding → Bound (success)
+Pending → Claiming → Bound (success)
                  ↘ Failed (error)
 ```
 
 #### Pending Phase
 - **Trigger**: ResourceClaim created by Orchestrator
-- **State**: Waiting for Provisioner Controller to claim the binding
-- **Orchestrator Status**: Updates `Workload.status.bindings[].phase=Pending`
+- **State**: Waiting for Provisioner Controller to claim the resource
+- **Orchestrator Status**: Updates `Workload.status.claims[].phase=Pending`
 
-#### Binding Phase  
+#### Claiming Phase  
 - **Trigger**: Provisioner Controller begins provisioning the resource
 - **State**: Active provisioning of the required dependency
-- **Orchestrator Status**: Updates `Workload.status.bindings[].phase=Binding`
+- **Orchestrator Status**: Updates `Workload.status.claims[].phase=Claiming`
 
 #### Bound Phase (Success)
 - **Trigger**: Provisioner Controller successfully provisions resource and populates `status.outputs`
 - **State**: Resource ready for consumption, outputs available
 - **Orchestrator Status**: 
-  - Updates `Workload.status.bindings[].phase=Bound`
+  - Updates `Workload.status.claims[].phase=Bound`
   - Sets `outputsAvailable=true`
-  - If all bindings are Bound, sets `ClaimsReady=True`
+  - If all claims are Bound, sets `ClaimsReady=True`
 
 #### Failed Phase (Error)
 - **Trigger**: Provisioner Controller encounters unrecoverable error
 - **State**: Resource provisioning failed, outputs unavailable  
 - **Orchestrator Status**:
-  - Updates `Workload.status.bindings[].phase=Failed`
+  - Updates `Workload.status.claims[].phase=Failed`
   - Sets appropriate abstract `reason` (e.g., `QuotaExceeded`, `PermissionDenied`)
   - Sets `ClaimsReady=False`
 
@@ -108,7 +108,7 @@ The Orchestrator sets `ClaimsReady=True` when:
    env:
      - name: DATABASE_URL
        from:
-         bindingKey: "database"
+         claimKey: "database"
          outputKey: "connectionString"
    ```
 
@@ -116,7 +116,7 @@ The Orchestrator sets `ClaimsReady=True` when:
    - **Values precedence**: **`defaults ⊕ normalize(Workload) ⊕ outputs`** (right-hand wins)
    - **Container Projections**: Environment variables, volume mounts, file injections
    - **Service Configuration**: Port mappings, ingress rules, network policies
-   - **Binding Dependencies**: Required outputs and criticality indicators
+   - **Claim Dependencies**: Required outputs and criticality indicators
    - **Runtime Metadata**: Labels, annotations, ownership mode
 
    Note: `${resources.*}` resolution occurs **after Provision completion** (unresolved placeholders result in `ProjectionError`)
@@ -214,18 +214,18 @@ Only **one endpoint** is exposed in `status.endpoint` to maintain interface simp
 ### Permanent Errors  
 - **Specification Errors**: `reason=SpecInvalid`, requires user intervention
 - **Policy Violations**: `reason=PolicyViolation`, requires compliance or policy change
-- **Resource Binding Failures**: `reason=BindingFailed`, requires dependency resolution
+- **Resource Claim Failures**: `reason=ClaimFailed`, requires dependency resolution
 
 ### Recovery Mechanisms
 
 #### Automatic Recovery
-- Provisioner Controllers retry failed bindings with exponential backoff
+- Provisioner Controllers retry failed claims with exponential backoff
 - Runtime Controllers automatically reconcile platform resource drift
 - Network partitions trigger re-evaluation of dependent resource status
 
 #### Manual Recovery
 - Users can trigger reconciliation by updating Workload metadata annotations
-- Platform operators can reset binding states by deleting and recreating ResourceClaims
+- Platform operators can reset claim states by deleting and recreating ResourceClaims
 - Emergency rollback available through Workload generation reversion
 
 ## State Consistency and Observability
@@ -278,7 +278,7 @@ kubectl get events --field-selector involvedObject.kind=Workload
         ↓ (True)
 [Generate ResourceClaims] 
         ↓
-[Wait for All Bindings] → [Binding Failed] → [Error Status + Retry]
+[Wait for All Claims] → [Claim Failed] → [Error Status + Retry]
         ↓ (All Bound)
 [ClaimsReady=True]
         ↓
@@ -299,8 +299,8 @@ kubectl get events --field-selector involvedObject.kind=Workload
 - If `containers.*.image == "."`, the Orchestrator expects an image to be supplied at deploy time:
   - Typically via a `ResourceClaim` of type `image|build|buildpack` resolved by a Provisioner that builds and pushes an image.
   - The `WorkloadPlan` carries a projection such as:
-    - `containers[].imageFrom: { bindingKey, outputKey: "image" }`
-  - The Runtime consumes the plan plus binding outputs to set the final image used for execution.
+    - `containers[].imageFrom: { claimKey, outputKey: "image" }`
+  - The Runtime consumes the plan plus claim outputs to set the final image used for execution.
 
 ### Endpoint population & aggregation
 

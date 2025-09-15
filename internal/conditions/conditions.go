@@ -24,10 +24,10 @@ import (
 
 // Condition Types
 const (
-	ConditionReady         = "Ready"
-	ConditionBindingsReady = "ClaimsReady"
-	ConditionRuntimeReady  = "RuntimeReady"
-	ConditionInputsValid   = "InputsValid"
+	ConditionReady        = "Ready"
+	ConditionClaimsReady  = "ClaimsReady"
+	ConditionRuntimeReady = "RuntimeReady"
+	ConditionInputsValid  = "InputsValid"
 )
 
 // Reasons (abstract vocabulary - platform-agnostic)
@@ -35,8 +35,8 @@ const (
 	ReasonSucceeded           = "Succeeded"
 	ReasonSpecInvalid         = "SpecInvalid"
 	ReasonPolicyViolation     = "PolicyViolation"
-	ReasonBindingPending      = "BindingPending"
-	ReasonBindingFailed       = "BindingFailed"
+	ReasonClaimPending        = "ClaimPending"
+	ReasonClaimFailed         = "ClaimFailed"
 	ReasonProjectionError     = "ProjectionError"
 	ReasonRuntimeSelecting    = "RuntimeSelecting"
 	ReasonRuntimeProvisioning = "RuntimeProvisioning"
@@ -114,7 +114,7 @@ func GetCondition(conditions []metav1.Condition, conditionType string) *metav1.C
 // Ready = InputsValid ∧ ClaimsReady ∧ RuntimeReady
 func ComputeReadyCondition(conditions []metav1.Condition) (metav1.ConditionStatus, string, string) {
 	inputsValid := IsConditionTrue(conditions, ConditionInputsValid)
-	claimsReady := IsConditionTrue(conditions, ConditionBindingsReady)
+	claimsReady := IsConditionTrue(conditions, ConditionClaimsReady)
 	runtimeReady := IsConditionTrue(conditions, ConditionRuntimeReady)
 
 	if !inputsValid {
@@ -126,11 +126,11 @@ func ComputeReadyCondition(conditions []metav1.Condition) (metav1.ConditionStatu
 	}
 
 	if !claimsReady {
-		claimsCond := GetCondition(conditions, ConditionBindingsReady)
+		claimsCond := GetCondition(conditions, ConditionClaimsReady)
 		if claimsCond != nil && claimsCond.Status == metav1.ConditionFalse {
 			return metav1.ConditionFalse, claimsCond.Reason, MessageClaimsNotReady
 		}
-		return metav1.ConditionFalse, ReasonBindingPending, MessageClaimsProvisioning
+		return metav1.ConditionFalse, ReasonClaimPending, MessageClaimsProvisioning
 	}
 
 	if !runtimeReady {

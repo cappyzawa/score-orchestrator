@@ -16,7 +16,7 @@ It complements:
   - `ResourceClaim` — one per `Workload.spec.resources.<key>` (OwnerRef = Workload)
   - `WorkloadPlan` — same name as the target Workload (OwnerRef = Workload)
 - **Updates (status):**
-  - **`Workload.status`** — the *only* writer (exposes `endpoint`, abstract `conditions`, binding summaries)
+  - **`Workload.status`** — the *only* writer (exposes `endpoint`, abstract `conditions`, claim summaries)
 - **Finalization:**
   - Adds a finalizer to `Workload` to ensure `ResourceClaim` deprovision completes before removal
 
@@ -26,7 +26,7 @@ It complements:
 - **Updates (status):** `ResourceClaim.status` (`phase`, `reason`, `message`, `outputs`, timestamps)
 - **Produces image outputs (when applicable):** Provisioners for `image|build|buildpack` types publish an OCI reference as `ResourceClaim.status.outputs.image`.
 - **Plan linkage:** The Orchestrator emits a `WorkloadPlan` projection that binds that output into the final container image, e.g.:
-  - `containers[].imageFrom: { bindingKey, outputKey: "image" }`
+  - `containers[].imageFrom: { claimKey, outputKey: "image" }`
 - **Finalization:** On `ResourceClaim` deletion, deprovision external resources / Secrets, then remove finalizer
 
 ### Runtime Controller (PF)
@@ -44,10 +44,10 @@ It complements:
 | `WorkloadPlan` (internal)   | Runtime, Orchestrator                      | **Orchestrator** (single writer) | —                      | Same name as Workload; OwnerRef = Workload |
 | `Secret/ConfigMap` (outputs) | Runtime (read), Orchestrator (not required) | **Provisioner**              | —                         | Same namespace; hidden from users |
 
-## Binding ↔ Plan linkage (how they meet)
-- **Key-based mapping:** `WorkloadPlan.spec.projection` refers to dependencies by `bindingKey` (the key in `Workload.spec.resources`).  
+## Claim ↔ Plan linkage (how they meet)
+- **Key-based mapping:** `WorkloadPlan.spec.projection` refers to dependencies by `claimKey` (the key in `Workload.spec.resources`).  
   Each `ResourceClaim` is created for that key; its `status.outputs` provide the concrete values.
-- **Separation of concerns:** Plan carries **how to use** (projection rules), Binding carries **what to provide** (outputs).
+- **Separation of concerns:** Plan carries **how to use** (projection rules), Claim carries **what to provide** (outputs).
 
 **Example: Image resolution flow:**
 ```yaml
@@ -57,10 +57,10 @@ outputs:
 
 # WorkloadPlan.spec.projection (by Orchestrator)  
 projection:
-  imageFrom: { bindingKey: "build-tool", outputKey: "image" }
+  imageFrom: { claimKey: "build-tool", outputKey: "image" }
 ```
 
 ## Error mapping (abstract reasons for `Workload.status`)
-- Binding in progress/failure → `BindingPending` / `BindingFailed`
+- Claim in progress/failure → `ClaimPending` / `ClaimFailed`
 - Outputs missing/mismatched vs plan → `ProjectionError`
 - Runtime health/materialization issues → `RuntimeDegraded` (no runtime-specific nouns in messages)

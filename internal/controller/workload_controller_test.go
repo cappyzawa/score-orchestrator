@@ -278,13 +278,13 @@ spec:
 			Eventually(func(g Gomega) {
 				var updatedWorkload scorev1b1.Workload
 				g.Expect(k8sCl.Get(context.Background(), typeNamespacedName, &updatedWorkload)).To(Succeed())
-				claimsCondition := conditions.GetCondition(updatedWorkload.Status.Conditions, conditions.ConditionBindingsReady)
+				claimsCondition := conditions.GetCondition(updatedWorkload.Status.Conditions, conditions.ConditionClaimsReady)
 				g.Expect(claimsCondition).NotTo(BeNil())
 				g.Expect(claimsCondition.Status).To(Equal(metav1.ConditionFalse))
 			}).Should(Succeed())
 		})
 
-		It("should create WorkloadPlan when bindings are ready", func() {
+		It("should create WorkloadPlan when claims are ready", func() {
 			// Wait for ResourceClaim to be created (event-driven)
 			By("Waiting for ResourceClaim to be created via Watch")
 			var claimKey types.NamespacedName
@@ -311,7 +311,7 @@ spec:
 			}
 			Expect(k8sClient.Status().Update(context.Background(), claim)).To(Succeed())
 
-			By("Waiting for binding status change to propagate to cached client")
+			By("Waiting for claim status change to propagate to cached client")
 			Eventually(func(g Gomega) {
 				var updatedClaim scorev1b1.ResourceClaim
 				g.Expect(k8sCl.Get(context.Background(), claimKey, &updatedClaim)).To(Succeed())
@@ -323,7 +323,7 @@ spec:
 			Eventually(func(g Gomega) {
 				var updatedWorkload scorev1b1.Workload
 				g.Expect(k8sCl.Get(context.Background(), typeNamespacedName, &updatedWorkload)).To(Succeed())
-				claimsCondition := conditions.GetCondition(updatedWorkload.Status.Conditions, conditions.ConditionBindingsReady)
+				claimsCondition := conditions.GetCondition(updatedWorkload.Status.Conditions, conditions.ConditionClaimsReady)
 				g.Expect(claimsCondition).NotTo(BeNil())
 				g.Expect(claimsCondition.Status).To(Equal(metav1.ConditionTrue))
 			}).Should(Succeed())

@@ -79,7 +79,7 @@ func UpsertWorkloadPlan(ctx context.Context, c client.Client, workload *scorev1b
 		Template:                   &selectedBackend.Template,
 		Values:                     values,
 		Projection:                 buildProjection(workload, claims),
-		Bindings:                   buildPlanBindings(claims),
+		Claims:                     buildPlanClaims(claims),
 	}
 
 	if errors.IsNotFound(getErr) {
@@ -134,7 +134,7 @@ func UpsertWorkloadPlan(ctx context.Context, c client.Client, workload *scorev1b
 	return nil
 }
 
-// buildProjection creates the projection rules for injecting binding outputs
+// buildProjection creates the projection rules for injecting claim outputs
 func buildProjection(workload *scorev1b1.Workload, claims []scorev1b1.ResourceClaim) scorev1b1.WorkloadProjection {
 	projection := scorev1b1.WorkloadProjection{}
 
@@ -199,7 +199,7 @@ func generateEnvMappings(workload *scorev1b1.Workload, claims []scorev1b1.Resour
 							if outputs[outputKey] {
 								envMappings = append(envMappings, scorev1b1.EnvMapping{
 									Name: envName,
-									From: scorev1b1.FromBindingOutput{
+									From: scorev1b1.FromClaimOutput{
 										ClaimKey:  resourceKey,
 										OutputKey: outputKey,
 									},
@@ -229,7 +229,7 @@ func generateEnvMappings(workload *scorev1b1.Workload, claims []scorev1b1.Resour
 				if !found {
 					envMappings = append(envMappings, scorev1b1.EnvMapping{
 						Name: envVar,
-						From: scorev1b1.FromBindingOutput{
+						From: scorev1b1.FromClaimOutput{
 							ClaimKey:  claim.Spec.Key,
 							OutputKey: outputKeyURI,
 						},
@@ -282,7 +282,7 @@ func generateVolumeProjections(workload *scorev1b1.Workload, claims []scorev1b1.
 								if ref == outputKey {
 									volumeProjections = append(volumeProjections, scorev1b1.VolumeProjection{
 										Name: fmt.Sprintf("%s-%s", resourceKey, outputKey),
-										From: &scorev1b1.FromBindingOutput{
+										From: &scorev1b1.FromClaimOutput{
 											ClaimKey:  resourceKey,
 											OutputKey: outputKey,
 										},
@@ -328,7 +328,7 @@ func generateFileProjections(workload *scorev1b1.Workload, claims []scorev1b1.Re
 						if availableCerts[resourceKey] {
 							fileProjections = append(fileProjections, scorev1b1.FileProjection{
 								Path: file.Target,
-								From: &scorev1b1.FromBindingOutput{
+								From: &scorev1b1.FromClaimOutput{
 									ClaimKey:  resourceKey,
 									OutputKey: "cert",
 								},
@@ -426,24 +426,24 @@ func validateProjectionRequirements(workload *scorev1b1.Workload, claims []score
 	return nil
 }
 
-// buildPlanBindings creates the binding requirements for the runtime
-func buildPlanBindings(claims []scorev1b1.ResourceClaim) []scorev1b1.PlanBinding {
-	planBindings := make([]scorev1b1.PlanBinding, 0, len(claims))
+// buildPlanClaims creates the claim requirements for the runtime
+func buildPlanClaims(claims []scorev1b1.ResourceClaim) []scorev1b1.PlanClaim {
+	planClaims := make([]scorev1b1.PlanClaim, 0, len(claims))
 
 	for _, claim := range claims {
-		planBinding := scorev1b1.PlanBinding{
+		planClaim := scorev1b1.PlanClaim{
 			Key:  claim.Spec.Key,
 			Type: claim.Spec.Type,
 		}
 
 		if claim.Spec.Class != nil {
-			planBinding.Class = claim.Spec.Class
+			planClaim.Class = claim.Spec.Class
 		}
 
-		planBindings = append(planBindings, planBinding)
+		planClaims = append(planClaims, planClaim)
 	}
 
-	return planBindings
+	return planClaims
 }
 
 // workloadPlanSpecEqual compares two WorkloadPlanSpec structs for equality
@@ -464,7 +464,7 @@ func workloadPlanSpecEqual(a, b scorev1b1.WorkloadPlanSpec) bool {
 	if len(a.Projection.Env) != len(b.Projection.Env) {
 		return false
 	}
-	if len(a.Bindings) != len(b.Bindings) {
+	if len(a.Claims) != len(b.Claims) {
 		return false
 	}
 

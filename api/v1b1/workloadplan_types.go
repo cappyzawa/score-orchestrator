@@ -17,7 +17,6 @@ limitations under the License.
 package v1b1
 
 import (
-	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
@@ -40,11 +39,11 @@ type WorkloadPlanWorkloadRef struct {
 	Namespace string `json:"namespace"`
 }
 
-// FromBindingOutput references a single output key produced by a binding.
-type FromBindingOutput struct {
+// FromClaimOutput references a single output key produced by a claim.
+type FromClaimOutput struct {
 	// ClaimKey is the key under Workload.spec.resources (e.g., "db").
 	ClaimKey string `json:"claimKey"`
-	// OutputKey is the output field exported by the binding (e.g., "uri").
+	// OutputKey is the output field exported by the claim (e.g., "uri").
 	OutputKey string `json:"outputKey"`
 }
 
@@ -52,44 +51,44 @@ type FromBindingOutput struct {
 type EnvMapping struct {
 	// Name is the environment variable name.
 	Name string `json:"name"`
-	// From selects the binding output to inject.
-	From FromBindingOutput `json:"from"`
+	// From selects the claim output to inject.
+	From FromClaimOutput `json:"from"`
 }
 
 // VolumeProjection projects a binding output into a volume (abstract).
 type VolumeProjection struct {
 	// Name is a logical volume name.
 	Name string `json:"name,omitempty"`
-	// From selects the binding output to project into the volume.
-	From *FromBindingOutput `json:"from,omitempty"`
+	// From selects the claim output to project into the volume.
+	From *FromClaimOutput `json:"from,omitempty"`
 }
 
 // FileProjection projects a binding output into a file path (abstract).
 type FileProjection struct {
 	// Path is a file path inside the container filesystem.
 	Path string `json:"path,omitempty"`
-	// From selects the binding output to write to the path.
-	From *FromBindingOutput `json:"from,omitempty"`
+	// From selects the claim output to write to the path.
+	From *FromClaimOutput `json:"from,omitempty"`
 }
 
-// WorkloadProjection configures how binding outputs are injected into the workload.
+// WorkloadProjection configures how claim outputs are injected into the workload.
 type WorkloadProjection struct {
 	Env     []EnvMapping       `json:"env,omitempty"`
 	Volumes []VolumeProjection `json:"volumes,omitempty"`
 	Files   []FileProjection   `json:"files,omitempty"`
 }
 
-// PlanBinding declares a binding requirement passed to the runtime controller.
+// PlanClaim declares a claim requirement passed to the runtime controller.
 // It mirrors the resolution keys (type/class/params) used by resolvers.
-type PlanBinding struct {
+type PlanClaim struct {
 	// Key is the logical key (e.g., "db", "cache").
 	Key string `json:"key"`
-	// Type is the abstract resource type (e.g., "postgresql").
+	// Type is the resource type (e.g., "postgres", "redis").
 	Type string `json:"type"`
-	// Class optionally refines the type (PF-specific resolver class).
+	// Class is the resource class (e.g., "dev", "prod", "large").
 	Class *string `json:"class,omitempty"`
-	// Params are opaque parameters used by the selected resolver/runtime.
-	Params *apiextv1.JSON `json:"params,omitempty"`
+	// Params contains extra provisioning parameters (opaque to Score).
+	Params *runtime.RawExtension `json:"params,omitempty"`
 }
 
 // WorkloadPlanSpec contains the runtime class and the materialization plan.
@@ -105,10 +104,10 @@ type WorkloadPlanSpec struct {
 	Template *TemplateSpec `json:"template,omitempty"`
 	// Values contains the composed template values (defaults ⊕ normalize(Workload) ⊕ outputs).
 	Values *runtime.RawExtension `json:"values,omitempty"`
-	// Projection defines how binding outputs are injected into the workload.
+	// Projection defines how claim outputs are injected into the workload.
 	Projection WorkloadProjection `json:"projection,omitempty"`
-	// Bindings declares resource requirements to be materialized by the runtime.
-	Bindings []PlanBinding `json:"bindings,omitempty"`
+	// Claims declares resource requirements to be materialized by the runtime.
+	Claims []PlanClaim `json:"claims,omitempty"`
 }
 
 // +kubebuilder:object:root=true

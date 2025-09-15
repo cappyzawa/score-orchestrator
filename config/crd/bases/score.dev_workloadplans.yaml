@@ -45,27 +45,28 @@ spec:
               WorkloadPlanSpec contains the runtime class and the materialization plan.
               All fields are internal; users should not rely on their concrete shape.
             properties:
-              bindings:
-                description: Bindings declares resource requirements to be materialized
+              claims:
+                description: Claims declares resource requirements to be materialized
                   by the runtime.
                 items:
                   description: |-
-                    PlanBinding declares a binding requirement passed to the runtime controller.
+                    PlanClaim declares a claim requirement passed to the runtime controller.
                     It mirrors the resolution keys (type/class/params) used by resolvers.
                   properties:
                     class:
-                      description: Class optionally refines the type (PF-specific
-                        resolver class).
+                      description: Class is the resource class (e.g., "dev", "prod",
+                        "large").
                       type: string
                     key:
                       description: Key is the logical key (e.g., "db", "cache").
                       type: string
                     params:
-                      description: Params are opaque parameters used by the selected
-                        resolver/runtime.
+                      description: Params contains extra provisioning parameters (opaque
+                        to Score).
+                      type: object
                       x-kubernetes-preserve-unknown-fields: true
                     type:
-                      description: Type is the abstract resource type (e.g., "postgresql").
+                      description: Type is the resource type (e.g., "postgres", "redis").
                       type: string
                   required:
                   - key
@@ -78,7 +79,7 @@ spec:
                 format: int64
                 type: integer
               projection:
-                description: Projection defines how binding outputs are injected into
+                description: Projection defines how claim outputs are injected into
                   the workload.
                 properties:
                   env:
@@ -87,7 +88,7 @@ spec:
                         variable.
                       properties:
                         from:
-                          description: From selects the binding output to inject.
+                          description: From selects the claim output to inject.
                           properties:
                             claimKey:
                               description: ClaimKey is the key under Workload.spec.resources
@@ -95,7 +96,7 @@ spec:
                               type: string
                             outputKey:
                               description: OutputKey is the output field exported
-                                by the binding (e.g., "uri").
+                                by the claim (e.g., "uri").
                               type: string
                           required:
                           - claimKey
@@ -115,8 +116,8 @@ spec:
                         file path (abstract).
                       properties:
                         from:
-                          description: From selects the binding output to write to
-                            the path.
+                          description: From selects the claim output to write to the
+                            path.
                           properties:
                             claimKey:
                               description: ClaimKey is the key under Workload.spec.resources
@@ -124,7 +125,7 @@ spec:
                               type: string
                             outputKey:
                               description: OutputKey is the output field exported
-                                by the binding (e.g., "uri").
+                                by the claim (e.g., "uri").
                               type: string
                           required:
                           - claimKey
@@ -141,8 +142,8 @@ spec:
                         a volume (abstract).
                       properties:
                         from:
-                          description: From selects the binding output to project
-                            into the volume.
+                          description: From selects the claim output to project into
+                            the volume.
                           properties:
                             claimKey:
                               description: ClaimKey is the key under Workload.spec.resources
@@ -150,7 +151,7 @@ spec:
                               type: string
                             outputKey:
                               description: OutputKey is the output field exported
-                                by the binding (e.g., "uri").
+                                by the claim (e.g., "uri").
                               type: string
                           required:
                           - claimKey

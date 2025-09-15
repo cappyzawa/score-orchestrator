@@ -36,7 +36,7 @@ Runtime selection and platform details are **not** part of this spec.
 ### Contract (at a glance)
 - Users define app intent: **`containers`** (required), optional **`service`**, optional **`resources`** (abstract dependencies).
 - No runtime-specific knobs. No indirection via ConfigMap templates, spec references, or custom includes.
-- Readiness and troubleshooting use **abstract** status only (`endpoint`, abstract `conditions`, binding summaries).
+- Readiness and troubleshooting use **abstract** status only (`endpoint`, abstract `conditions`, claim summaries).
 
 #### Required/Optional Summary
 
@@ -54,7 +54,7 @@ Runtime selection and platform details are **not** part of this spec.
 | ------------ | ------- | ---------------------------------- |
 | `endpoint`   | No      | canonical URL if available (format: uri) |
 | `conditions` | **Yes** | Kubernetes-style condition array   |
-| `bindings`   | No      | summary per dependency             |
+| `claims`     | No      | summary per dependency             |
 
 ### Spec — Top-level fields (and only these)
 - **`containers`** (required): `map<string, ContainerSpec>`
@@ -101,13 +101,13 @@ Runtime selection and platform details are **not** part of this spec.
   - **Types:** `Ready`, `ClaimsReady`, `RuntimeReady`, `InputsValid`
   - **Reasons (fixed, abstract):**  
     `Succeeded`, `SpecInvalid`, `PolicyViolation`,  
-    `BindingPending`, `BindingFailed`,  
+    `ClaimPending`, `ClaimFailed`,  
     `ProjectionError`,  
     `RuntimeSelecting`, `RuntimeProvisioning`, `RuntimeDegraded`,  
     `QuotaExceeded`, `PermissionDenied`, `NetworkUnavailable`
   - **Message:** one neutral sentence; **no runtime-specific nouns**.
-- **`bindings[]`** — summary per dependency:  
-  `key`, `phase (Pending|Binding|Bound|Failed)`, `reason`, `message`, `outputsAvailable: bool`
+- **`claims[]`** — summary per dependency:  
+  `key`, `phase (Pending|Claiming|Bound|Failed)`, `reason`, `message`, `outputsAvailable: bool`
 - **Readiness rule:** `InputsValid=True AND ClaimsReady=True AND RuntimeReady=True`
 
 ### Orchestrator configuration (non-CRD, conceptual)
@@ -154,7 +154,7 @@ Provisioners watch this resource, provision/bind concrete services, and publish 
 
 | Field                                       | Req     | Notes                                     |
 | ------------------------------------------- | ------- | ----------------------------------------- |
-| `phase`                                     | **Yes** | `Pending \| Binding \| Bound \| Failed`   |
+| `phase`                                     | **Yes** | `Pending \| Claiming \| Bound \| Failed`   |
 | `reason` / `message`                        | No      | abstract                                  |
 | `outputs`                                   | No*     | see CEL: at least one subfield if present |
 | `outputsAvailable`                          | **Yes** | boolean gate for consumers                |
@@ -168,10 +168,10 @@ Provisioners watch this resource, provision/bind concrete services, and publish 
 - `id` (optional): bind to an existing instance
 - `params` (optional): free-form resolver config
 - `deprovisionPolicy` (optional): Enum { **Delete**, **Retain**, **Orphan** }.
-  Defines how provisioned resources are handled when the binding is removed.
+  Defines how provisioned resources are handled when the claim is removed.
 
 ### Status (written by Provisioners)
-- **`phase`**: `Pending → Binding → (Bound | Failed)` (may re-enter on reconcile)
+- **`phase`**: `Pending → Claiming → (Bound | Failed)` (may re-enter on reconcile)
 - **`reason` / `message`**: short, neutral text (no runtime-specific nouns)
 - **`outputs` (standardized)**: Shape:
   ```yaml
@@ -195,7 +195,7 @@ Provisioners watch this resource, provision/bind concrete services, and publish 
   object (i.e., the CEL condition evaluates to true).
 - `observedGeneration`, `lastTransitionTime`
 
-> The Orchestrator aggregates Binding status into `Workload.status.bindings[]` and `ClaimsReady`.
+> The Orchestrator aggregates Claim status into `Workload.status.claims[]` and `ClaimsReady`.
 
 ---
 
@@ -205,7 +205,7 @@ Provisioners watch this resource, provision/bind concrete services, and publish 
 A runtime-agnostic **projection plan** that the Runtime consumes to materialize the application.  
 It expresses **how to use** dependency outputs, not the outputs themselves.
 
-For example, `imageFrom: { bindingKey, outputKey }` may be used to bind an `outputs.image` into the final container image.
+For example, `imageFrom: { claimKey, outputKey }` may be used to bind an `outputs.image` into the final container image.
 
 ### Ownership & Visibility
 - Same name/namespace as the target `Workload`; OwnerRef set.
@@ -221,16 +221,16 @@ For example, `imageFrom: { bindingKey, outputKey }` may be used to bind an `outp
 | `observedWorkloadGeneration`   | **Yes** | tracks Workload changes              |
 | `runtimeClass`                 | **Yes** | abstract runtime (e.g., kubernetes) |
 | `projection`                   | No      | env/volume mapping rules             |
-| `bindings`                     | No      | desired dependency summaries         |
+| `claims`                       | No      | desired dependency summaries         |
 
 ### Spec (conceptual)
 - **`workloadRef.name`** and **`observedWorkloadGeneration`**
 - **`runtimeClass`**: abstract runtime class (e.g., `kubernetes`, `ecs`, `nomad`)
 - **`projection`**: minimal rules, e.g.:
-  - `env[]: { name, from: { bindingKey, outputKey } }`
-  - `imageFrom: { bindingKey, outputKey }`
+  - `env[]: { name, from: { claimKey, outputKey } }`
+  - `imageFrom: { claimKey, outputKey }`
   - (optionally) `volumes[]` / `files[]` projection in the same spirit
-- **`bindings[]`**: desired summaries of each dependency (`key`, `type`, optional `class/params`)
+- **`claims[]`**: desired summaries of each dependency (`key`, `type`, optional `class/params`)
 
 > Separation of concerns:  
 > **Plan** carries **how to use** (mapping rules); **ResourceClaim** carries **what to provide** (outputs).
@@ -239,7 +239,7 @@ For example, `imageFrom: { bindingKey, outputKey }` may be used to bind an `outp
 
 ## Cross-resource linkage
 
-- **Key-based mapping:** `WorkloadPlan.spec.projection` refers to dependencies by `bindingKey` (the key in `Workload.spec.resources`).  
+- **Key-based mapping:** `WorkloadPlan.spec.projection` refers to dependencies by `claimKey` (the key in `Workload.spec.resources`).  
   Each `ResourceClaim` is created for that key; its `status.outputs` provide concrete values.
 - **Endpoint propagation:** The Runtime determines an endpoint (if any). The Orchestrator reflects it into `Workload.status.endpoint`.  
   At most one canonical endpoint is exposed to users.
@@ -251,8 +251,8 @@ For example, `imageFrom: { bindingKey, outputKey }` may be used to bind an `outp
 - **Succeeded** — all requirements satisfied and materialized.
 - **SpecInvalid** — schema/CEL violations or unresolved references.
 - **PolicyViolation** — violates platform policy (Orchestrator config + Admission).
-- **BindingPending** — dependency provisioning in progress.
-- **BindingFailed** — dependency provisioning failed.
+- **ClaimPending** — dependency provisioning in progress.
+- **ClaimFailed** — dependency provisioning failed.
 - **ProjectionError** — plan requires outputs that are missing/mismatched.
 - **RuntimeSelecting** — runtime class decision pending/deferred.
 - **RuntimeProvisioning** — runtime materialization in progress.
@@ -273,7 +273,7 @@ Do not use `interface{}` / `any` / `runtime.RawExtension` for these fields.
 
 Affected fields:
 - `ResourceClaim.spec.params`
-- `WorkloadPlan.spec.bindings[].params`
+- `WorkloadPlan.spec.claims[].params`
 
 ---
 

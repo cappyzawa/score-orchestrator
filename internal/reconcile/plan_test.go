@@ -448,14 +448,14 @@ func TestWorkloadPlanSpecEqual(t *testing.T) {
 			Env: []scorev1b1.EnvMapping{
 				{
 					Name: "DATABASE_URL",
-					From: scorev1b1.FromBindingOutput{
+					From: scorev1b1.FromClaimOutput{
 						ClaimKey:  "db",
 						OutputKey: "uri",
 					},
 				},
 			},
 		},
-		Bindings: []scorev1b1.PlanBinding{
+		Claims: []scorev1b1.PlanClaim{
 			{
 				Key:  "db",
 				Type: "postgres",
@@ -515,11 +515,11 @@ func TestWorkloadPlanSpecEqual(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "different bindings count",
+			name: "different claims count",
 			a:    baseSpec,
 			b: func() scorev1b1.WorkloadPlanSpec {
 				spec := baseSpec
-				spec.Bindings = []scorev1b1.PlanBinding{}
+				spec.Claims = []scorev1b1.PlanClaim{}
 				return spec
 			}(),
 			expected: false,

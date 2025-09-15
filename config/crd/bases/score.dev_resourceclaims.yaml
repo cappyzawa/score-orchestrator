@@ -130,7 +130,7 @@ spec:
                     properties:
                       name:
                         description: Name is the object name (namespace is implicit
-                          from the binding).
+                          from the claim).
                         type: string
                     required:
                     - name
@@ -145,7 +145,7 @@ spec:
                     properties:
                       name:
                         description: Name is the object name (namespace is implicit
-                          from the binding).
+                          from the claim).
                         type: string
                     required:
                     - name
@@ -165,10 +165,10 @@ spec:
                   for consumption.
                 type: boolean
               phase:
-                description: Phase summarizes resolver progress (Pending/Binding/Bound/Failed).
+                description: Phase summarizes resolver progress (Pending/Claiming/Bound/Failed).
                 enum:
                 - Pending
-                - Binding
+                - Claiming
                 - Bound
                 - Failed
                 type: string

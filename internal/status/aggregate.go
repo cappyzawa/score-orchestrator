@@ -23,30 +23,30 @@ import (
 	"github.com/cappyzawa/score-orchestrator/internal/conditions"
 )
 
-// BindingAggregation holds the aggregated binding information
-type BindingAggregation struct {
-	Ready    bool
-	Reason   string
-	Message  string
-	Bindings []scorev1b1.BindingSummary
+// ClaimAggregation holds the aggregated claim information
+type ClaimAggregation struct {
+	Ready   bool
+	Reason  string
+	Message string
+	Claims  []scorev1b1.ClaimSummary
 }
 
 // AggregateClaimStatuses processes all ResourceClaims and returns aggregated status
-func AggregateClaimStatuses(claims []scorev1b1.ResourceClaim) BindingAggregation {
+func AggregateClaimStatuses(claims []scorev1b1.ResourceClaim) ClaimAggregation {
 	if len(claims) == 0 {
-		return BindingAggregation{
-			Ready:    false,
-			Reason:   conditions.ReasonBindingPending,
-			Message:  conditions.MessageNoClaimsFound,
-			Bindings: []scorev1b1.BindingSummary{},
+		return ClaimAggregation{
+			Ready:   false,
+			Reason:  conditions.ReasonClaimPending,
+			Message: conditions.MessageNoClaimsFound,
+			Claims:  []scorev1b1.ClaimSummary{},
 		}
 	}
 
-	summaries := make([]scorev1b1.BindingSummary, 0, len(claims))
+	summaries := make([]scorev1b1.ClaimSummary, 0, len(claims))
 	var boundCount, failedCount int
 
 	for _, claim := range claims {
-		summary := scorev1b1.BindingSummary{
+		summary := scorev1b1.ClaimSummary{
 			Key:              claim.Spec.Key,
 			Phase:            claim.Status.Phase,
 			Reason:           claim.Status.Reason,
@@ -79,7 +79,7 @@ func AggregateClaimStatuses(claims []scorev1b1.ResourceClaim) BindingAggregation
 
 	if failedCount > 0 {
 		ready = false
-		reason = conditions.ReasonBindingFailed
+		reason = conditions.ReasonClaimFailed
 		message = conditions.MessageClaimsFailed
 	} else if boundCount == totalClaims {
 		ready = true
@@ -87,22 +87,22 @@ func AggregateClaimStatuses(claims []scorev1b1.ResourceClaim) BindingAggregation
 		message = conditions.MessageAllClaimsReady
 	} else {
 		ready = false
-		reason = conditions.ReasonBindingPending
+		reason = conditions.ReasonClaimPending
 		message = conditions.MessageClaimsProvisioning
 	}
 
-	return BindingAggregation{
-		Ready:    ready,
-		Reason:   reason,
-		Message:  message,
-		Bindings: summaries,
+	return ClaimAggregation{
+		Ready:   ready,
+		Reason:  reason,
+		Message: message,
+		Claims:  summaries,
 	}
 }
 
-// UpdateWorkloadStatusFromAggregation updates the Workload status based on binding aggregation
-func UpdateWorkloadStatusFromAggregation(workload *scorev1b1.Workload, agg BindingAggregation) {
-	// Update bindings summary
-	workload.Status.Bindings = agg.Bindings
+// UpdateWorkloadStatusFromAggregation updates the Workload status based on claim aggregation
+func UpdateWorkloadStatusFromAggregation(workload *scorev1b1.Workload, agg ClaimAggregation) {
+	// Update claims summary
+	workload.Status.Claims = agg.Claims
 
 	// Update ClaimsReady condition
 	var status metav1.ConditionStatus
@@ -113,7 +113,7 @@ func UpdateWorkloadStatusFromAggregation(workload *scorev1b1.Workload, agg Bindi
 	}
 
 	conditions.SetCondition(&workload.Status.Conditions,
-		conditions.ConditionBindingsReady,
+		conditions.ConditionClaimsReady,
 		status,
 		agg.Reason,
 		agg.Message)

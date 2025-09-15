@@ -41,7 +41,7 @@ type NamespacedName struct {
 	Namespace string `json:"namespace"`
 }
 
-// DeprovisionPolicy controls behavior when a binding is no longer needed.
+// DeprovisionPolicy controls behavior when a claim is no longer needed.
 // Delete removes provisioned resources; Retain keeps them; Orphan detaches ownership.
 // +kubebuilder:validation:Enum=Delete;Retain;Orphan
 type DeprovisionPolicy string
@@ -75,15 +75,15 @@ type ResourceClaimSpec struct {
 type ResourceClaimPhase string
 
 const (
-	ResourceClaimPhasePending ResourceClaimPhase = "Pending"
-	ResourceClaimPhaseBinding ResourceClaimPhase = "Binding"
-	ResourceClaimPhaseBound   ResourceClaimPhase = "Bound"
-	ResourceClaimPhaseFailed  ResourceClaimPhase = "Failed"
+	ResourceClaimPhasePending  ResourceClaimPhase = "Pending"
+	ResourceClaimPhaseClaiming ResourceClaimPhase = "Claiming"
+	ResourceClaimPhaseBound    ResourceClaimPhase = "Bound"
+	ResourceClaimPhaseFailed   ResourceClaimPhase = "Failed"
 )
 
 // LocalObjectReference references a namespaced local object by name.
 type LocalObjectReference struct {
-	// Name is the object name (namespace is implicit from the binding).
+	// Name is the object name (namespace is implicit from the claim).
 	Name string `json:"name"`
 }
 
@@ -113,8 +113,8 @@ type ResourceClaimOutputs struct {
 
 // ResourceClaimStatus is written by resolvers to report progress and outputs.
 type ResourceClaimStatus struct {
-	// Phase summarizes resolver progress (Pending/Binding/Bound/Failed).
-	// +kubebuilder:validation:Enum=Pending;Binding;Bound;Failed
+	// Phase summarizes resolver progress (Pending/Claiming/Bound/Failed).
+	// +kubebuilder:validation:Enum=Pending;Claiming;Bound;Failed
 	Phase ResourceClaimPhase `json:"phase,omitempty"`
 	// Reason is an abstract machine-readable reason; avoid runtime-specific nouns.
 	Reason string `json:"reason,omitempty"`

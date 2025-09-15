@@ -32,8 +32,8 @@ import (
 
 // Resource coordination events
 const (
-	// EventReasonBindingError indicates an error in resource binding
-	EventReasonBindingError = "BindingError"
+	// EventReasonClaimError indicates an error in resource claiming
+	EventReasonClaimError = "ClaimError"
 	// EventReasonPlanCreated indicates successful workload plan creation
 	EventReasonPlanCreated = "PlanCreated"
 	// EventReasonPlanError indicates an error in workload plan creation
@@ -41,23 +41,23 @@ const (
 )
 
 // handleResourceClaims creates/updates ResourceClaims and aggregates their statuses
-func (r *WorkloadReconciler) handleResourceClaims(ctx context.Context, workload *scorev1b1.Workload) ([]scorev1b1.ResourceClaim, status.BindingAggregation, error) {
+func (r *WorkloadReconciler) handleResourceClaims(ctx context.Context, workload *scorev1b1.Workload) ([]scorev1b1.ResourceClaim, status.ClaimAggregation, error) {
 	log := ctrl.LoggerFrom(ctx)
 
 	// Create/update ResourceClaims
 	if err := reconcile.UpsertResourceClaims(ctx, r.Client, workload); err != nil {
 		log.Error(err, "Failed to upsert ResourceClaims")
-		r.Recorder.Eventf(workload, EventTypeWarning, EventReasonBindingError, "Failed to create resource bindings: %v", err)
-		return nil, status.BindingAggregation{}, err
+		r.Recorder.Eventf(workload, EventTypeWarning, EventReasonClaimError, "Failed to create resource claims: %v", err)
+		return nil, status.ClaimAggregation{}, err
 	}
 
 	log.V(1).Info("ResourceClaims upserted successfully")
 
-	// Aggregate binding statuses
+	// Aggregate claim statuses
 	claims, err := GetResourceClaimsForWorkload(ctx, r.Client, workload)
 	if err != nil {
 		log.Error(err, "Failed to get ResourceClaims")
-		return nil, status.BindingAggregation{}, err
+		return nil, status.ClaimAggregation{}, err
 	}
 
 	log.V(1).Info("Retrieved ResourceClaims", "count", len(claims))
@@ -69,10 +69,10 @@ func (r *WorkloadReconciler) handleResourceClaims(ctx context.Context, workload 
 }
 
 // handleWorkloadPlan creates WorkloadPlan if bindings are ready
-func (r *WorkloadReconciler) handleWorkloadPlan(ctx context.Context, workload *scorev1b1.Workload, claims []scorev1b1.ResourceClaim, agg status.BindingAggregation) error {
+func (r *WorkloadReconciler) handleWorkloadPlan(ctx context.Context, workload *scorev1b1.Workload, claims []scorev1b1.ResourceClaim, agg status.ClaimAggregation) error {
 	log := ctrl.LoggerFrom(ctx)
 
-	// Create WorkloadPlan if bindings are ready
+	// Create WorkloadPlan if claims are ready
 	if agg.Ready {
 		log.V(1).Info("Claims are ready, creating WorkloadPlan")
 		selectedBackend, err := r.selectBackend(ctx, workload)
