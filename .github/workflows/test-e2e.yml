@@ -1,15 +1,20 @@
 name: E2E Tests
 
 on:
-  # Run on commits to main (docs/md changes are ignored)
+  # Only run on commits to main (docs/md changes are ignored)
   push:
     branches: [main]
     paths-ignore:
     - 'docs/**'
     - '*.md'
-  # Run when a new comment is added on issues/PRs
+  # Run when a new comment is added on PRs (to accept /run-e2e)
   issue_comment:
     types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
 
 # Avoid duplicate/parallel E2E runs for the same target
 concurrency:
@@ -38,12 +43,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
-    # Minimal permissions (write is needed only to post a result comment)
-    permissions:
-      contents: read
-      pull-requests: read
-      issues: write
-
     steps:
     - name: Determine target ref (PR merge or current)
       id: target
@@ -59,7 +58,6 @@ jobs:
     - name: Clone the code
       uses: actions/checkout@v4
       with:
-        # Use PR merge ref for comment-triggered runs
         ref: ${{ steps.target.outputs.ref }}
         fetch-depth: 0
 
@@ -67,13 +65,12 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version-file: go.mod
-        # Enable built-in module cache to speed up builds
         cache: true
         cache-dependency-path: go.sum
 
     - name: Install the latest version of kind
       run: |
-        # NOTE: pin a version for reproducibility if needed
+        # NOTE: pin a specific version for reproducibility if needed
         curl -fsSL -o ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-amd64
         chmod +x ./kind
         sudo mv ./kind /usr/local/bin/kind
@@ -84,7 +81,7 @@ jobs:
     - name: Running Test e2e
       id: e2e
       run: |
-        # Keeping tidy for CI parity with local runs (optional in CI)
+        # Keep tidy for parity with local runs (optional)
         go mod tidy
         make test-e2e
 
@@ -93,6 +90,8 @@ jobs:
       if: github.event_name == 'issue_comment'
       uses: actions/github-script@v7
       with:
+        # Explicitly pass the token so github-script uses it
+        github-token: ${{ secrets.GITHUB_TOKEN }}
         script: |
           const outcome = "${{ job.status }}";
           const ref = "${{ steps.target.outputs.ref }}";
@@ -103,6 +102,7 @@ jobs:
           await github.rest.issues.createComment({
             owner: context.repo.owner,
             repo: context.repo.repo,
-            issue_number: context.issue.number,
+            issue_number: ${{ github.event.issue.number }},
             body
           });
+
