@@ -30,6 +30,7 @@ import (
 	scorev1b1 "github.com/cappyzawa/score-orchestrator/api/v1b1"
 	"github.com/cappyzawa/score-orchestrator/internal/conditions"
 	"github.com/cappyzawa/score-orchestrator/internal/config"
+	"github.com/cappyzawa/score-orchestrator/internal/controller/managers"
 	"github.com/cappyzawa/score-orchestrator/internal/endpoint"
 	"github.com/cappyzawa/score-orchestrator/internal/reconcile"
 )
@@ -41,6 +42,7 @@ type WorkloadReconciler struct {
 	Recorder        record.EventRecorder
 	ConfigLoader    config.ConfigLoader
 	EndpointDeriver *endpoint.EndpointDeriver
+	ClaimManager    *managers.ClaimManager
 }
 
 // +kubebuilder:rbac:groups=score.dev,resources=workloads,verbs=get;list;watch;update;patch

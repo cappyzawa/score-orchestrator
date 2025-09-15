@@ -47,7 +47,7 @@ func (r *WorkloadReconciler) handleDeletion(ctx context.Context, workload *score
 	}
 
 	// Wait for ResourceClaims to be cleaned up by their owners (Provisioners)
-	claims, err := GetResourceClaimsForWorkload(ctx, r.Client, workload)
+	claims, err := r.ClaimManager.GetClaims(ctx, workload)
 	if err != nil {
 		log.Error(err, "Failed to get ResourceClaims during deletion")
 		return ctrl.Result{}, err
