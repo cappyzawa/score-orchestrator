@@ -146,3 +146,17 @@ func inputsValidToConditionStatus(valid bool) metav1.ConditionStatus {
 	}
 	return metav1.ConditionFalse
 }
+
+// computeFinalStatus updates runtime status and computes Ready condition
+func (r *WorkloadReconciler) computeFinalStatus(ctx context.Context, workload *scorev1b1.Workload) {
+	// Update RuntimeReady and endpoint (MVP logic)
+	r.updateRuntimeStatus(ctx, workload)
+
+	// Compute and set Ready condition
+	readyStatus, readyReason, readyMessage := conditions.ComputeReadyCondition(workload.Status.Conditions)
+	conditions.SetCondition(&workload.Status.Conditions, conditions.ConditionReady, readyStatus, readyReason, readyMessage)
+
+	if readyStatus == metav1.ConditionTrue {
+		r.Recorder.Event(workload, EventTypeNormal, EventReasonReady, "Workload is ready and operational")
+	}
+}

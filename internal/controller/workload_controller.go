@@ -18,11 +18,9 @@ package controller
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -34,7 +32,6 @@ import (
 	"github.com/cappyzawa/score-orchestrator/internal/config"
 	"github.com/cappyzawa/score-orchestrator/internal/endpoint"
 	"github.com/cappyzawa/score-orchestrator/internal/reconcile"
-	"github.com/cappyzawa/score-orchestrator/internal/status"
 )
 
 // WorkloadReconciler reconciles a Workload object
@@ -97,73 +94,23 @@ func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	log.V(1).Info("Inputs validated successfully, proceeding to resource claims")
 
-	// Create/update ResourceClaims
-	if err := reconcile.UpsertResourceClaims(ctx, r.Client, workload); err != nil {
-		log.Error(err, "Failed to upsert ResourceClaims")
-		r.Recorder.Eventf(workload, EventTypeWarning, EventReasonBindingError, "Failed to create resource bindings: %v", err)
-		return ctrl.Result{}, err
-	}
-
-	log.V(1).Info("ResourceClaims upserted successfully")
-
-	// Aggregate binding statuses
-	claims, err := GetResourceClaimsForWorkload(ctx, r.Client, workload)
+	// Handle ResourceClaims
+	claims, agg, err := r.handleResourceClaims(ctx, workload)
 	if err != nil {
-		log.Error(err, "Failed to get ResourceClaims")
 		return ctrl.Result{}, err
 	}
 
-	log.V(1).Info("Retrieved ResourceClaims", "count", len(claims))
-
-	agg := status.AggregateClaimStatuses(claims)
-	status.UpdateWorkloadStatusFromAggregation(workload, agg)
-
-	// Create WorkloadPlan if bindings are ready
-	if agg.Ready {
-		log.V(1).Info("Claims are ready, creating WorkloadPlan")
-		selectedBackend, err := r.selectBackend(ctx, workload)
-		if err != nil {
-			log.Error(err, "Failed to select backend")
-			conditions.SetCondition(&workload.Status.Conditions,
-				conditions.ConditionRuntimeReady,
-				metav1.ConditionFalse,
-				conditions.ReasonRuntimeSelecting,
-				fmt.Sprintf("Backend selection failed: %v", err))
+	// Handle WorkloadPlan
+	if err := r.handleWorkloadPlan(ctx, workload, claims, agg); err != nil {
+		// Check if this is a status-only error that should trigger immediate return
+		if strings.Contains(err.Error(), "missing required outputs for projection") {
 			return r.updateStatusAndReturn(ctx, workload)
 		}
-
-		if err := reconcile.UpsertWorkloadPlan(ctx, r.Client, workload, claims, selectedBackend); err != nil {
-			log.Error(err, "Failed to upsert WorkloadPlan")
-
-			// Check if this is a projection error (missing outputs)
-			if strings.Contains(err.Error(), "missing required outputs for projection") {
-				conditions.SetCondition(&workload.Status.Conditions,
-					conditions.ConditionRuntimeReady,
-					metav1.ConditionFalse,
-					conditions.ReasonProjectionError,
-					fmt.Sprintf("Cannot create plan: %v", err))
-				r.Recorder.Eventf(workload, EventTypeWarning, EventReasonProjectionError, "Missing required resource outputs: %v", err)
-				return r.updateStatusAndReturn(ctx, workload)
-			}
-
-			r.Recorder.Eventf(workload, EventTypeWarning, EventReasonPlanError, "Failed to create workload plan: %v", err)
-			return ctrl.Result{}, err
-		}
-		r.Recorder.Eventf(workload, EventTypeNormal, EventReasonPlanCreated, "WorkloadPlan created successfully")
-	} else {
-		log.V(1).Info("Claims are not ready yet", "ready", agg.Ready, "reason", agg.Reason, "message", agg.Message)
+		return ctrl.Result{}, err
 	}
 
-	// Update RuntimeReady and endpoint (MVP logic)
-	r.updateRuntimeStatus(ctx, workload)
-
-	// Compute and set Ready condition
-	readyStatus, readyReason, readyMessage := conditions.ComputeReadyCondition(workload.Status.Conditions)
-	conditions.SetCondition(&workload.Status.Conditions, conditions.ConditionReady, readyStatus, readyReason, readyMessage)
-
-	if readyStatus == metav1.ConditionTrue {
-		r.Recorder.Event(workload, EventTypeNormal, EventReasonReady, "Workload is ready and operational")
-	}
+	// Compute final status
+	r.computeFinalStatus(ctx, workload)
 
 	return r.updateStatusAndReturn(ctx, workload)
 }
