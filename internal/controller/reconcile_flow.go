@@ -21,7 +21,7 @@ import (
 	"fmt"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 
@@ -127,7 +127,7 @@ func (r *WorkloadReconciler) validateInputsAndPolicy(_ context.Context, workload
 
 // updateStatusAndReturn updates the Workload status and returns the result
 func (r *WorkloadReconciler) updateStatusAndReturn(ctx context.Context, workload *scorev1b1.Workload) (ctrl.Result, error) {
-	if err := r.Status().Update(ctx, workload); err != nil {
+	if err := r.StatusManager.UpdateStatus(ctx, workload); err != nil {
 		if apierrors.IsConflict(err) {
 			// Resource version conflict - requeue for retry
 			ctrl.LoggerFrom(ctx).V(1).Info("Resource version conflict, requeuing", "error", err)
@@ -137,26 +137,4 @@ func (r *WorkloadReconciler) updateStatusAndReturn(ctx context.Context, workload
 		return ctrl.Result{}, err
 	}
 	return ctrl.Result{}, nil
-}
-
-// inputsValidToConditionStatus converts boolean to ConditionStatus
-func inputsValidToConditionStatus(valid bool) metav1.ConditionStatus {
-	if valid {
-		return metav1.ConditionTrue
-	}
-	return metav1.ConditionFalse
-}
-
-// computeFinalStatus updates runtime status and computes Ready condition
-func (r *WorkloadReconciler) computeFinalStatus(ctx context.Context, workload *scorev1b1.Workload) {
-	// Update RuntimeReady and endpoint (MVP logic)
-	r.updateRuntimeStatus(ctx, workload)
-
-	// Compute and set Ready condition
-	readyStatus, readyReason, readyMessage := conditions.ComputeReadyCondition(workload.Status.Conditions)
-	conditions.SetCondition(&workload.Status.Conditions, conditions.ConditionReady, readyStatus, readyReason, readyMessage)
-
-	if readyStatus == metav1.ConditionTrue {
-		r.Recorder.Event(workload, EventTypeNormal, EventReasonReady, "Workload is ready and operational")
-	}
 }
