@@ -17,93 +17,76 @@ limitations under the License.
 package selection
 
 import (
-	"testing"
-
-	"github.com/stretchr/testify/assert"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
-func TestCombineLabels(t *testing.T) {
-	tests := []struct {
-		name            string
-		workloadLabels  map[string]string
-		namespaceLabels map[string]string
-		expected        map[string]string
-	}{
-		{
-			name: "workload labels take precedence over namespace labels",
-			workloadLabels: map[string]string{
-				"app":         "myapp",
-				"environment": "staging", // conflicts with namespace
-			},
-			namespaceLabels: map[string]string{
-				"environment": "production", // should be overridden
-				"team":        "backend",
-			},
-			expected: map[string]string{
-				"app":         "myapp",
-				"environment": "staging", // workload wins
-				"team":        "backend",
-			},
+var _ = DescribeTable("CombineLabels",
+	func(workloadLabels, namespaceLabels, expected map[string]string) {
+		result := combineLabels(workloadLabels, namespaceLabels)
+		Expect(result).To(Equal(expected))
+	},
+	Entry("workload labels take precedence over namespace labels",
+		map[string]string{
+			"app":         "myapp",
+			"environment": "staging", // conflicts with namespace
 		},
-		{
-			name:           "only namespace labels",
-			workloadLabels: nil,
-			namespaceLabels: map[string]string{
-				"environment": "production",
-				"team":        "backend",
-			},
-			expected: map[string]string{
-				"environment": "production",
-				"team":        "backend",
-			},
+		map[string]string{
+			"environment": "production", // should be overridden
+			"team":        "backend",
 		},
-		{
-			name: "only workload labels",
-			workloadLabels: map[string]string{
-				"app":     "myapp",
-				"version": "1.0.0",
-			},
-			namespaceLabels: nil,
-			expected: map[string]string{
-				"app":     "myapp",
-				"version": "1.0.0",
-			},
+		map[string]string{
+			"app":         "myapp",
+			"environment": "staging", // workload wins
+			"team":        "backend",
 		},
-		{
-			name:            "both nil",
-			workloadLabels:  nil,
-			namespaceLabels: nil,
-			expected:        map[string]string{},
+	),
+	Entry("only namespace labels",
+		nil,
+		map[string]string{
+			"environment": "production",
+			"team":        "backend",
 		},
-		{
-			name:            "empty maps",
-			workloadLabels:  map[string]string{},
-			namespaceLabels: map[string]string{},
-			expected:        map[string]string{},
+		map[string]string{
+			"environment": "production",
+			"team":        "backend",
 		},
-		{
-			name: "no conflicts",
-			workloadLabels: map[string]string{
-				"app":     "myapp",
-				"version": "1.0.0",
-			},
-			namespaceLabels: map[string]string{
-				"environment": "production",
-				"team":        "backend",
-			},
-			expected: map[string]string{
-				"app":         "myapp",
-				"version":     "1.0.0",
-				"environment": "production",
-				"team":        "backend",
-			},
+	),
+	Entry("only workload labels",
+		map[string]string{
+			"app":     "myapp",
+			"version": "1.0.0",
 		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := combineLabels(tt.workloadLabels, tt.namespaceLabels)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
+		nil,
+		map[string]string{
+			"app":     "myapp",
+			"version": "1.0.0",
+		},
+	),
+	Entry("both nil",
+		nil,
+		nil,
+		map[string]string{},
+	),
+	Entry("empty maps",
+		map[string]string{},
+		map[string]string{},
+		map[string]string{},
+	),
+	Entry("no conflicts",
+		map[string]string{
+			"app":     "myapp",
+			"version": "1.0.0",
+		},
+		map[string]string{
+			"environment": "production",
+			"team":        "backend",
+		},
+		map[string]string{
+			"app":         "myapp",
+			"version":     "1.0.0",
+			"environment": "production",
+			"team":        "backend",
+		},
+	),
+)

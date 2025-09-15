@@ -18,11 +18,10 @@ package managers
 
 import (
 	"context"
-	"testing"
+	"fmt"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
-	"github.com/stretchr/testify/require"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -39,22 +38,30 @@ import (
 
 // Mock implementations
 type mockConfigLoader struct {
-	mock.Mock
+	loadConfigFunc func(ctx context.Context) (*scorev1b1.OrchestratorConfig, error)
+	watchFunc      func(ctx context.Context) (<-chan config.ConfigEvent, error)
+	closeFunc      func() error
 }
 
 func (m *mockConfigLoader) LoadConfig(ctx context.Context) (*scorev1b1.OrchestratorConfig, error) {
-	args := m.Called(ctx)
-	return args.Get(0).(*scorev1b1.OrchestratorConfig), args.Error(1)
+	if m.loadConfigFunc != nil {
+		return m.loadConfigFunc(ctx)
+	}
+	return nil, nil
 }
 
 func (m *mockConfigLoader) Watch(ctx context.Context) (<-chan config.ConfigEvent, error) {
-	args := m.Called(ctx)
-	return args.Get(0).(<-chan config.ConfigEvent), args.Error(1)
+	if m.watchFunc != nil {
+		return m.watchFunc(ctx)
+	}
+	return nil, nil
 }
 
 func (m *mockConfigLoader) Close() error {
-	args := m.Called()
-	return args.Error(0)
+	if m.closeFunc != nil {
+		return m.closeFunc()
+	}
+	return nil
 }
 
 type mockEventRecorder struct {
@@ -66,311 +73,345 @@ func (m *mockEventRecorder) Eventf(object runtime.Object, eventtype, reason, mes
 	m.events = append(m.events, reason)
 }
 
-func TestPlanManager_EnsurePlan(t *testing.T) {
-	scheme := runtime.NewScheme()
-	require.NoError(t, scorev1b1.AddToScheme(scheme))
+var _ = Describe("PlanManager", func() {
+	var (
+		scheme   *runtime.Scheme
+		workload *scorev1b1.Workload
+		claims   []scorev1b1.ResourceClaim
+	)
 
-	workload := &scorev1b1.Workload{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-workload",
-			Namespace: "test-ns",
-		},
-		Spec: scorev1b1.WorkloadSpec{
-			Containers: map[string]scorev1b1.ContainerSpec{
-				"main": {
-					Image: "nginx:latest",
-				},
-			},
-		},
-	}
+	BeforeEach(func() {
+		scheme = runtime.NewScheme()
+		Expect(scorev1b1.AddToScheme(scheme)).ToNot(HaveOccurred())
 
-	claims := []scorev1b1.ResourceClaim{
-		{
+		workload = &scorev1b1.Workload{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      "test-claim",
-				Namespace: "test-ns",
-			},
-			Spec: scorev1b1.ResourceClaimSpec{
-				Key:  "database",
-				Type: "postgres",
-			},
-			Status: scorev1b1.ResourceClaimStatus{
-				Phase:            "Bound",
-				OutputsAvailable: true,
-				Outputs: scorev1b1.ResourceClaimOutputs{
-					URI: stringPtr("postgres://localhost:5432/test"),
-				},
-			},
-		},
-	}
-
-	t.Run("EnsurePlan creates plan when claims are ready", func(t *testing.T) {
-		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-		mockConfigLoader := &mockConfigLoader{}
-		endpointDeriver := endpoint.NewEndpointDeriver(fakeClient)
-		mockRecorder := &mockEventRecorder{}
-
-		// Create a status manager for the test
-		statusManager := NewStatusManager(fakeClient, scheme, mockRecorder, endpointDeriver)
-		pm := NewPlanManager(fakeClient, scheme, mockRecorder, mockConfigLoader, endpointDeriver, statusManager)
-
-		// Mock config loading
-		testConfig := &scorev1b1.OrchestratorConfig{
-			Spec: scorev1b1.OrchestratorConfigSpec{
-				Profiles: []scorev1b1.ProfileSpec{
-					{
-						Name: "test-profile",
-						Backends: []scorev1b1.BackendSpec{
-							{
-								BackendId:    "test-backend",
-								RuntimeClass: "kubernetes",
-								Priority:     100,
-								Template: scorev1b1.TemplateSpec{
-									Kind:   "manifests",
-									Ref:    "test-template:latest",
-									Values: nil, // Use nil for MVP test
-								},
-							},
-						},
-					},
-				},
-				Defaults: scorev1b1.DefaultsSpec{
-					Profile: "test-profile",
-				},
-			},
-		}
-		mockConfigLoader.On("LoadConfig", mock.Anything).Return(testConfig, nil)
-
-		agg := status.ClaimAggregation{
-			Ready:   true,
-			Message: "All claims are ready",
-		}
-
-		err := pm.EnsurePlan(context.Background(), workload, claims, agg)
-		require.NoError(t, err)
-
-		// Verify WorkloadPlan was created
-		planList := &scorev1b1.WorkloadPlanList{}
-		err = fakeClient.List(context.Background(), planList, client.InNamespace("test-ns"))
-		require.NoError(t, err)
-		assert.Len(t, planList.Items, 1)
-
-		plan := planList.Items[0]
-		assert.Equal(t, "test-workload", plan.Name)
-		assert.Equal(t, "test-ns", plan.Namespace)
-		assert.Equal(t, "kubernetes", plan.Spec.RuntimeClass)
-
-		// Verify event was recorded
-		assert.Contains(t, mockRecorder.events, EventReasonPlanCreated)
-
-		mockConfigLoader.AssertExpectations(t)
-	})
-
-	t.Run("EnsurePlan skips when claims are not ready", func(t *testing.T) {
-		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-		mockConfigLoader := &mockConfigLoader{}
-		endpointDeriver := endpoint.NewEndpointDeriver(fakeClient)
-		mockRecorder := &mockEventRecorder{}
-
-		// Create a status manager for the test
-		statusManager := NewStatusManager(fakeClient, scheme, mockRecorder, endpointDeriver)
-		pm := NewPlanManager(fakeClient, scheme, mockRecorder, mockConfigLoader, endpointDeriver, statusManager)
-
-		agg := status.ClaimAggregation{
-			Ready:   false,
-			Message: "Claims are not ready",
-		}
-
-		err := pm.EnsurePlan(context.Background(), workload, claims, agg)
-		require.NoError(t, err)
-
-		// Verify no WorkloadPlan was created
-		planList := &scorev1b1.WorkloadPlanList{}
-		err = fakeClient.List(context.Background(), planList, client.InNamespace("test-ns"))
-		require.NoError(t, err)
-		assert.Len(t, planList.Items, 0)
-
-		// Verify no events were recorded
-		assert.Empty(t, mockRecorder.events)
-
-		// Config loader should not have been called
-		mockConfigLoader.AssertNotCalled(t, "LoadConfig")
-	})
-
-	t.Run("EnsurePlan handles backend selection error", func(t *testing.T) {
-		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-		mockConfigLoader := &mockConfigLoader{}
-		endpointDeriver := endpoint.NewEndpointDeriver(fakeClient)
-		mockRecorder := &mockEventRecorder{}
-
-		// Create a status manager for the test
-		statusManager := NewStatusManager(fakeClient, scheme, mockRecorder, endpointDeriver)
-		pm := NewPlanManager(fakeClient, scheme, mockRecorder, mockConfigLoader, endpointDeriver, statusManager)
-
-		// Mock config loading failure
-		mockConfigLoader.On("LoadConfig", mock.Anything).Return((*scorev1b1.OrchestratorConfig)(nil), assert.AnError)
-
-		agg := status.ClaimAggregation{
-			Ready:   true,
-			Message: "All claims are ready",
-		}
-
-		err := pm.EnsurePlan(context.Background(), workload, claims, agg)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to load orchestrator config")
-
-		// Verify condition was set on workload
-		runtimeCondition := conditions.GetCondition(workload.Status.Conditions, conditions.ConditionRuntimeReady)
-		require.NotNil(t, runtimeCondition)
-		assert.Equal(t, metav1.ConditionFalse, runtimeCondition.Status)
-		assert.Equal(t, conditions.ReasonRuntimeSelecting, runtimeCondition.Reason)
-
-		mockConfigLoader.AssertExpectations(t)
-	})
-}
-
-func TestPlanManager_GetPlan(t *testing.T) {
-	scheme := runtime.NewScheme()
-	require.NoError(t, scorev1b1.AddToScheme(scheme))
-
-	workload := &scorev1b1.Workload{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-workload",
-			Namespace: "test-ns",
-		},
-	}
-
-	existingPlan := &scorev1b1.WorkloadPlan{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-workload",
-			Namespace: "test-ns",
-			Labels: map[string]string{
-				"score.dev/workload": "test-workload",
-			},
-		},
-		Spec: scorev1b1.WorkloadPlanSpec{
-			WorkloadRef: scorev1b1.WorkloadPlanWorkloadRef{
 				Name:      "test-workload",
 				Namespace: "test-ns",
 			},
-			RuntimeClass: "kubernetes",
-		},
-	}
-
-	t.Run("GetPlan returns existing plan", func(t *testing.T) {
-		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(existingPlan).Build()
-		mockConfigLoader := &mockConfigLoader{}
-		endpointDeriver := endpoint.NewEndpointDeriver(fakeClient)
-		mockRecorder := &mockEventRecorder{}
-
-		// Create a status manager for the test
-		statusManager := NewStatusManager(fakeClient, scheme, mockRecorder, endpointDeriver)
-		pm := NewPlanManager(fakeClient, scheme, mockRecorder, mockConfigLoader, endpointDeriver, statusManager)
-
-		plan, err := pm.GetPlan(context.Background(), workload)
-		require.NoError(t, err)
-		require.NotNil(t, plan)
-		assert.Equal(t, "test-workload", plan.Name)
-		assert.Equal(t, "kubernetes", plan.Spec.RuntimeClass)
-	})
-
-	t.Run("GetPlan returns NotFound when plan doesn't exist", func(t *testing.T) {
-		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-		mockConfigLoader := &mockConfigLoader{}
-		endpointDeriver := endpoint.NewEndpointDeriver(fakeClient)
-		mockRecorder := &mockEventRecorder{}
-
-		// Create a status manager for the test
-		statusManager := NewStatusManager(fakeClient, scheme, mockRecorder, endpointDeriver)
-		pm := NewPlanManager(fakeClient, scheme, mockRecorder, mockConfigLoader, endpointDeriver, statusManager)
-
-		plan, err := pm.GetPlan(context.Background(), workload)
-		require.Error(t, err)
-		assert.True(t, errors.IsNotFound(err))
-		assert.Nil(t, plan)
-	})
-}
-
-func TestPlanManager_SelectBackend(t *testing.T) {
-	scheme := runtime.NewScheme()
-	require.NoError(t, scorev1b1.AddToScheme(scheme))
-
-	workload := &scorev1b1.Workload{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-workload",
-			Namespace: "test-ns",
-		},
-		Spec: scorev1b1.WorkloadSpec{
-			Containers: map[string]scorev1b1.ContainerSpec{
-				"main": {
-					Image: "nginx:latest",
-				},
-			},
-		},
-	}
-
-	t.Run("SelectBackend returns selected backend", func(t *testing.T) {
-		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-		mockConfigLoader := &mockConfigLoader{}
-		endpointDeriver := endpoint.NewEndpointDeriver(fakeClient)
-		mockRecorder := &mockEventRecorder{}
-
-		// Create a status manager for the test
-		statusManager := NewStatusManager(fakeClient, scheme, mockRecorder, endpointDeriver)
-		pm := NewPlanManager(fakeClient, scheme, mockRecorder, mockConfigLoader, endpointDeriver, statusManager)
-
-		testConfig := &scorev1b1.OrchestratorConfig{
-			Spec: scorev1b1.OrchestratorConfigSpec{
-				Profiles: []scorev1b1.ProfileSpec{
-					{
-						Name: "test-profile",
-						Backends: []scorev1b1.BackendSpec{
-							{
-								BackendId:    "test-backend",
-								RuntimeClass: "kubernetes",
-								Priority:     100,
-								Template: scorev1b1.TemplateSpec{
-									Kind:   "manifests",
-									Ref:    "test-template:latest",
-									Values: nil, // Use nil for MVP test
-								},
-							},
-						},
+			Spec: scorev1b1.WorkloadSpec{
+				Containers: map[string]scorev1b1.ContainerSpec{
+					"main": {
+						Image: "nginx:latest",
 					},
-				},
-				Defaults: scorev1b1.DefaultsSpec{
-					Profile: "test-profile",
 				},
 			},
 		}
-		mockConfigLoader.On("LoadConfig", mock.Anything).Return(testConfig, nil)
 
-		selectedBackend, err := pm.SelectBackend(context.Background(), workload)
-		require.NoError(t, err)
-		require.NotNil(t, selectedBackend)
-		assert.Equal(t, "test-backend", selectedBackend.BackendID)
-		assert.Equal(t, "kubernetes", selectedBackend.RuntimeClass)
-
-		mockConfigLoader.AssertExpectations(t)
+		claims = []scorev1b1.ResourceClaim{
+			{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-claim",
+					Namespace: "test-ns",
+				},
+				Spec: scorev1b1.ResourceClaimSpec{
+					Key:  "database",
+					Type: "postgres",
+				},
+				Status: scorev1b1.ResourceClaimStatus{
+					Phase:            "Bound",
+					OutputsAvailable: true,
+					Outputs: scorev1b1.ResourceClaimOutputs{
+						URI: stringPtr("postgres://localhost:5432/test"),
+					},
+				},
+			},
+		}
 	})
 
-	t.Run("SelectBackend handles config loading error", func(t *testing.T) {
-		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-		mockConfigLoader := &mockConfigLoader{}
-		endpointDeriver := endpoint.NewEndpointDeriver(fakeClient)
-		mockRecorder := &mockEventRecorder{}
+	Describe("EnsurePlan", func() {
+		Context("when claims are ready", func() {
+			It("should create plan", func() {
+				fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+				endpointDeriver := endpoint.NewEndpointDeriver(fakeClient)
+				mockRecorder := &mockEventRecorder{}
 
-		// Create a status manager for the test
-		statusManager := NewStatusManager(fakeClient, scheme, mockRecorder, endpointDeriver)
-		pm := NewPlanManager(fakeClient, scheme, mockRecorder, mockConfigLoader, endpointDeriver, statusManager)
+				// Mock config loading
+				testConfig := &scorev1b1.OrchestratorConfig{
+					Spec: scorev1b1.OrchestratorConfigSpec{
+						Profiles: []scorev1b1.ProfileSpec{
+							{
+								Name: "test-profile",
+								Backends: []scorev1b1.BackendSpec{
+									{
+										BackendId:    "test-backend",
+										RuntimeClass: "kubernetes",
+										Priority:     100,
+										Template: scorev1b1.TemplateSpec{
+											Kind:   "manifests",
+											Ref:    "test-template:latest",
+											Values: nil, // Use nil for MVP test
+										},
+									},
+								},
+							},
+						},
+						Defaults: scorev1b1.DefaultsSpec{
+							Profile: "test-profile",
+						},
+					},
+				}
 
-		mockConfigLoader.On("LoadConfig", mock.Anything).Return((*scorev1b1.OrchestratorConfig)(nil), assert.AnError)
+				mockConfigLoader := &mockConfigLoader{
+					loadConfigFunc: func(ctx context.Context) (*scorev1b1.OrchestratorConfig, error) {
+						return testConfig, nil
+					},
+				}
 
-		selectedBackend, err := pm.SelectBackend(context.Background(), workload)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to load orchestrator config")
-		assert.Nil(t, selectedBackend)
+				// Create a status manager for the test
+				statusManager := NewStatusManager(fakeClient, scheme, mockRecorder, endpointDeriver)
+				pm := NewPlanManager(fakeClient, scheme, mockRecorder, mockConfigLoader, endpointDeriver, statusManager)
 
-		mockConfigLoader.AssertExpectations(t)
+				agg := status.ClaimAggregation{
+					Ready:   true,
+					Message: "All claims are ready",
+				}
+
+				err := pm.EnsurePlan(context.Background(), workload, claims, agg)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Verify WorkloadPlan was created
+				planList := &scorev1b1.WorkloadPlanList{}
+				err = fakeClient.List(context.Background(), planList, client.InNamespace("test-ns"))
+				Expect(err).ToNot(HaveOccurred())
+				Expect(planList.Items).To(HaveLen(1))
+
+				plan := planList.Items[0]
+				Expect(plan.Name).To(Equal("test-workload"))
+				Expect(plan.Namespace).To(Equal("test-ns"))
+				Expect(plan.Spec.RuntimeClass).To(Equal("kubernetes"))
+
+				// Verify event was recorded
+				Expect(mockRecorder.events).To(ContainElement(EventReasonPlanCreated))
+			})
+		})
+
+		Context("when claims are not ready", func() {
+			It("should skip plan creation", func() {
+				fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+				mockConfigLoader := &mockConfigLoader{}
+				endpointDeriver := endpoint.NewEndpointDeriver(fakeClient)
+				mockRecorder := &mockEventRecorder{}
+
+				// Create a status manager for the test
+				statusManager := NewStatusManager(fakeClient, scheme, mockRecorder, endpointDeriver)
+				pm := NewPlanManager(fakeClient, scheme, mockRecorder, mockConfigLoader, endpointDeriver, statusManager)
+
+				agg := status.ClaimAggregation{
+					Ready:   false,
+					Message: "Claims are not ready",
+				}
+
+				err := pm.EnsurePlan(context.Background(), workload, claims, agg)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Verify no WorkloadPlan was created
+				planList := &scorev1b1.WorkloadPlanList{}
+				err = fakeClient.List(context.Background(), planList, client.InNamespace("test-ns"))
+				Expect(err).ToNot(HaveOccurred())
+				Expect(planList.Items).To(BeEmpty())
+
+				// Verify no events were recorded
+				Expect(mockRecorder.events).To(BeEmpty())
+			})
+		})
+
+		Context("when backend selection fails", func() {
+			It("should handle error", func() {
+				fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+				endpointDeriver := endpoint.NewEndpointDeriver(fakeClient)
+				mockRecorder := &mockEventRecorder{}
+
+				// Mock config loading failure
+				mockConfigLoader := &mockConfigLoader{
+					loadConfigFunc: func(ctx context.Context) (*scorev1b1.OrchestratorConfig, error) {
+						return nil, fmt.Errorf("config loading failed")
+					},
+				}
+
+				// Create a status manager for the test
+				statusManager := NewStatusManager(fakeClient, scheme, mockRecorder, endpointDeriver)
+				pm := NewPlanManager(fakeClient, scheme, mockRecorder, mockConfigLoader, endpointDeriver, statusManager)
+
+				agg := status.ClaimAggregation{
+					Ready:   true,
+					Message: "All claims are ready",
+				}
+
+				err := pm.EnsurePlan(context.Background(), workload, claims, agg)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("failed to load orchestrator config"))
+
+				// Verify condition was set on workload
+				runtimeCondition := conditions.GetCondition(workload.Status.Conditions, conditions.ConditionRuntimeReady)
+				Expect(runtimeCondition).ToNot(BeNil())
+				Expect(runtimeCondition.Status).To(Equal(metav1.ConditionFalse))
+				Expect(runtimeCondition.Reason).To(Equal(conditions.ReasonRuntimeSelecting))
+			})
+		})
 	})
-}
+
+	Describe("GetPlan", func() {
+		var (
+			testWorkload *scorev1b1.Workload
+			existingPlan *scorev1b1.WorkloadPlan
+		)
+
+		BeforeEach(func() {
+			testWorkload = &scorev1b1.Workload{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-workload",
+					Namespace: "test-ns",
+				},
+			}
+
+			existingPlan = &scorev1b1.WorkloadPlan{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-workload",
+					Namespace: "test-ns",
+					Labels: map[string]string{
+						"score.dev/workload": "test-workload",
+					},
+				},
+				Spec: scorev1b1.WorkloadPlanSpec{
+					WorkloadRef: scorev1b1.WorkloadPlanWorkloadRef{
+						Name:      "test-workload",
+						Namespace: "test-ns",
+					},
+					RuntimeClass: "kubernetes",
+				},
+			}
+		})
+
+		Context("when plan exists", func() {
+			It("should return existing plan", func() {
+				fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(existingPlan).Build()
+				mockConfigLoader := &mockConfigLoader{}
+				endpointDeriver := endpoint.NewEndpointDeriver(fakeClient)
+				mockRecorder := &mockEventRecorder{}
+
+				// Create a status manager for the test
+				statusManager := NewStatusManager(fakeClient, scheme, mockRecorder, endpointDeriver)
+				pm := NewPlanManager(fakeClient, scheme, mockRecorder, mockConfigLoader, endpointDeriver, statusManager)
+
+				plan, err := pm.GetPlan(context.Background(), testWorkload)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(plan).ToNot(BeNil())
+				Expect(plan.Name).To(Equal("test-workload"))
+				Expect(plan.Spec.RuntimeClass).To(Equal("kubernetes"))
+			})
+		})
+
+		Context("when plan doesn't exist", func() {
+			It("should return NotFound error", func() {
+				fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+				mockConfigLoader := &mockConfigLoader{}
+				endpointDeriver := endpoint.NewEndpointDeriver(fakeClient)
+				mockRecorder := &mockEventRecorder{}
+
+				// Create a status manager for the test
+				statusManager := NewStatusManager(fakeClient, scheme, mockRecorder, endpointDeriver)
+				pm := NewPlanManager(fakeClient, scheme, mockRecorder, mockConfigLoader, endpointDeriver, statusManager)
+
+				plan, err := pm.GetPlan(context.Background(), testWorkload)
+				Expect(err).To(HaveOccurred())
+				Expect(errors.IsNotFound(err)).To(BeTrue())
+				Expect(plan).To(BeNil())
+			})
+		})
+	})
+
+	Describe("SelectBackend", func() {
+		var (
+			testWorkload *scorev1b1.Workload
+		)
+
+		BeforeEach(func() {
+			testWorkload = &scorev1b1.Workload{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-workload",
+					Namespace: "test-ns",
+				},
+				Spec: scorev1b1.WorkloadSpec{
+					Containers: map[string]scorev1b1.ContainerSpec{
+						"main": {
+							Image: "nginx:latest",
+						},
+					},
+				},
+			}
+		})
+
+		Context("when config loading succeeds", func() {
+			It("should return selected backend", func() {
+				fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+				endpointDeriver := endpoint.NewEndpointDeriver(fakeClient)
+				mockRecorder := &mockEventRecorder{}
+
+				testConfig := &scorev1b1.OrchestratorConfig{
+					Spec: scorev1b1.OrchestratorConfigSpec{
+						Profiles: []scorev1b1.ProfileSpec{
+							{
+								Name: "test-profile",
+								Backends: []scorev1b1.BackendSpec{
+									{
+										BackendId:    "test-backend",
+										RuntimeClass: "kubernetes",
+										Priority:     100,
+										Template: scorev1b1.TemplateSpec{
+											Kind:   "manifests",
+											Ref:    "test-template:latest",
+											Values: nil, // Use nil for MVP test
+										},
+									},
+								},
+							},
+						},
+						Defaults: scorev1b1.DefaultsSpec{
+							Profile: "test-profile",
+						},
+					},
+				}
+
+				mockConfigLoader := &mockConfigLoader{
+					loadConfigFunc: func(ctx context.Context) (*scorev1b1.OrchestratorConfig, error) {
+						return testConfig, nil
+					},
+				}
+
+				// Create a status manager for the test
+				statusManager := NewStatusManager(fakeClient, scheme, mockRecorder, endpointDeriver)
+				pm := NewPlanManager(fakeClient, scheme, mockRecorder, mockConfigLoader, endpointDeriver, statusManager)
+
+				selectedBackend, err := pm.SelectBackend(context.Background(), testWorkload)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(selectedBackend).ToNot(BeNil())
+				Expect(selectedBackend.BackendID).To(Equal("test-backend"))
+				Expect(selectedBackend.RuntimeClass).To(Equal("kubernetes"))
+			})
+		})
+
+		Context("when config loading fails", func() {
+			It("should handle error", func() {
+				fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+				endpointDeriver := endpoint.NewEndpointDeriver(fakeClient)
+				mockRecorder := &mockEventRecorder{}
+
+				mockConfigLoader := &mockConfigLoader{
+					loadConfigFunc: func(ctx context.Context) (*scorev1b1.OrchestratorConfig, error) {
+						return nil, fmt.Errorf("config loading failed")
+					},
+				}
+
+				// Create a status manager for the test
+				statusManager := NewStatusManager(fakeClient, scheme, mockRecorder, endpointDeriver)
+				pm := NewPlanManager(fakeClient, scheme, mockRecorder, mockConfigLoader, endpointDeriver, statusManager)
+
+				selectedBackend, err := pm.SelectBackend(context.Background(), testWorkload)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("failed to load orchestrator config"))
+				Expect(selectedBackend).To(BeNil())
+			})
+		})
+	})
+})
