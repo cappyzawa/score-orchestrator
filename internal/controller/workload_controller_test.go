@@ -163,6 +163,13 @@ spec:
 				mgr.GetScheme(),
 				mgr.GetEventRecorderFor("claim-manager-test-"+testNS.Name),
 			)
+			planManager := managers.NewPlanManager(
+				mgr.GetClient(),
+				mgr.GetScheme(),
+				mgr.GetEventRecorderFor("plan-manager-test-"+testNS.Name),
+				configLoader,
+				endpoint.NewEndpointDeriver(mgr.GetClient()),
+			)
 			reconciler := &WorkloadReconciler{
 				Client:          mgr.GetClient(),
 				Scheme:          mgr.GetScheme(),
@@ -170,6 +177,7 @@ spec:
 				ConfigLoader:    configLoader,
 				EndpointDeriver: endpoint.NewEndpointDeriver(mgr.GetClient()),
 				ClaimManager:    claimManager,
+				PlanManager:     planManager,
 			}
 			// Setup controller directly with unique name to avoid conflicts between tests
 			err = ctrl.NewControllerManagedBy(mgr).
