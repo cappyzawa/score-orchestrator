@@ -40,7 +40,11 @@ var _ = Describe("ADR-0003/0004 Workload Lifecycle E2E Tests", func() {
 
 	AfterEach(func() {
 		By("Cleaning up test resources")
-		cmd := exec.Command("kubectl", "delete", "workload", "basic-web-test", "-n", "kbinit-system", "--ignore-not-found=true")
+		// Remove finalizer first to allow clean deletion
+		cmd := exec.Command("kubectl", "patch", "workload", "basic-web-test", "-n", "kbinit-system", "--type=merge", "-p", `{"metadata":{"finalizers":[]}}`, "--ignore-not-found=true")
+		utils.Run(cmd)
+		// Then delete the workload
+		cmd = exec.Command("kubectl", "delete", "workload", "basic-web-test", "-n", "kbinit-system", "--ignore-not-found=true", "--timeout=30s")
 		utils.Run(cmd)
 	})
 

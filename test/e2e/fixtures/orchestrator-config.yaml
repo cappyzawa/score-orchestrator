@@ -2,6 +2,11 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: kbinit-system
+  labels:
+    name: kbinit-system
+    test-purpose: e2e
+  # Ensure no finalizers block deletion
+  finalizers: []
 ---
 apiVersion: v1
 kind: ConfigMap
