@@ -102,7 +102,7 @@ type LoaderOptions struct {
 // DefaultLoaderOptions returns the default loader options
 func DefaultLoaderOptions() LoaderOptions {
 	return LoaderOptions{
-		Namespace:     "score-system",
+		Namespace:     "kbinit-system",
 		ConfigMapName: "orchestrator-config",
 		ConfigMapKey:  "config.yaml",
 		EnableCache:   true,

@@ -197,8 +197,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Create ConfigMapLoader with default options
-	configLoader := config.NewConfigMapLoader(clientset, config.DefaultLoaderOptions())
+	// Create ConfigMapLoader with environment-aware options
+	loaderOptions := config.DefaultLoaderOptions()
+	if envNamespace := os.Getenv("CONFIG_NAMESPACE"); envNamespace != "" {
+		loaderOptions.Namespace = envNamespace
+	}
+	configLoader := config.NewConfigMapLoader(clientset, loaderOptions)
 
 	if err := (&controller.WorkloadReconciler{
 		Client:          mgr.GetClient(),

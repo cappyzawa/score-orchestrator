@@ -88,13 +88,13 @@ func TestConfigMapLoader_LoadConfig(t *testing.T) {
 				configMap := &corev1.ConfigMap{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "orchestrator-config",
-						Namespace: "score-system",
+						Namespace: "kbinit-system",
 					},
 					Data: map[string]string{
 						"config.yaml": validConfigYAML,
 					},
 				}
-				_, err := client.CoreV1().ConfigMaps("score-system").Create(context.TODO(), configMap, metav1.CreateOptions{})
+				_, err := client.CoreV1().ConfigMaps("kbinit-system").Create(context.TODO(), configMap, metav1.CreateOptions{})
 				if err != nil {
 					t.Fatalf("Failed to create ConfigMap: %v", err)
 				}
@@ -119,13 +119,13 @@ func TestConfigMapLoader_LoadConfig(t *testing.T) {
 				configMap := &corev1.ConfigMap{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "orchestrator-config",
-						Namespace: "score-system",
+						Namespace: "kbinit-system",
 					},
 					Data: map[string]string{
 						"wrong-key.yaml": validConfigYAML,
 					},
 				}
-				_, err := client.CoreV1().ConfigMaps("score-system").Create(context.TODO(), configMap, metav1.CreateOptions{})
+				_, err := client.CoreV1().ConfigMaps("kbinit-system").Create(context.TODO(), configMap, metav1.CreateOptions{})
 				if err != nil {
 					t.Fatalf("Failed to create ConfigMap: %v", err)
 				}
@@ -142,13 +142,13 @@ func TestConfigMapLoader_LoadConfig(t *testing.T) {
 				configMap := &corev1.ConfigMap{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "orchestrator-config",
-						Namespace: "score-system",
+						Namespace: "kbinit-system",
 					},
 					Data: map[string]string{
 						"config.yaml": "invalid: yaml: content: [",
 					},
 				}
-				_, err := client.CoreV1().ConfigMaps("score-system").Create(context.TODO(), configMap, metav1.CreateOptions{})
+				_, err := client.CoreV1().ConfigMaps("kbinit-system").Create(context.TODO(), configMap, metav1.CreateOptions{})
 				if err != nil {
 					t.Fatalf("Failed to create ConfigMap: %v", err)
 				}
@@ -165,13 +165,13 @@ func TestConfigMapLoader_LoadConfig(t *testing.T) {
 				configMap := &corev1.ConfigMap{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "orchestrator-config",
-						Namespace: "score-system",
+						Namespace: "kbinit-system",
 					},
 					Data: map[string]string{
 						"config.yaml": invalidConfigYAML,
 					},
 				}
-				_, err := client.CoreV1().ConfigMaps("score-system").Create(context.TODO(), configMap, metav1.CreateOptions{})
+				_, err := client.CoreV1().ConfigMaps("kbinit-system").Create(context.TODO(), configMap, metav1.CreateOptions{})
 				if err != nil {
 					t.Fatalf("Failed to create ConfigMap: %v", err)
 				}
@@ -258,13 +258,13 @@ func TestConfigMapLoader_LoadConfigWithCache(t *testing.T) {
 	configMap := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "orchestrator-config",
-			Namespace: "score-system",
+			Namespace: "kbinit-system",
 		},
 		Data: map[string]string{
 			"config.yaml": validConfigYAML,
 		},
 	}
-	_, err := client.CoreV1().ConfigMaps("score-system").Create(context.TODO(), configMap, metav1.CreateOptions{})
+	_, err := client.CoreV1().ConfigMaps("kbinit-system").Create(context.TODO(), configMap, metav1.CreateOptions{})
 	if err != nil {
 		t.Fatalf("Failed to create ConfigMap: %v", err)
 	}
@@ -347,7 +347,7 @@ func TestNewConfigMapLoader(t *testing.T) {
 			name:    "default options",
 			options: LoaderOptions{},
 			expected: LoaderOptions{
-				Namespace:     "score-system",
+				Namespace:     "kbinit-system",
 				ConfigMapName: "orchestrator-config",
 				ConfigMapKey:  "config.yaml",
 				EnableCache:   false,

@@ -1,0 +1,17 @@
+apiVersion: score.dev/v1b1
+kind: Workload
+metadata:
+  name: invalid-test
+  namespace: kbinit-system
+  labels:
+    team: e2e-test
+spec:
+  # Missing required containers field to trigger validation error
+  service:
+    ports:
+    - port: 8080
+  resources:
+    db:
+      type: postgres
+      # Missing required type field for intentional error
+      class: small

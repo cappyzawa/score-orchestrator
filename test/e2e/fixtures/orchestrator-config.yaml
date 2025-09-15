@@ -1,0 +1,96 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kbinit-system
+  labels:
+    name: kbinit-system
+    test-purpose: e2e
+  # Ensure no finalizers block deletion
+  finalizers: []
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: orchestrator-config
+  namespace: kbinit-system
+data:
+  config.yaml: |
+    apiVersion: score.dev/v1b1
+    kind: OrchestratorConfig
+    metadata:
+      name: e2e-test-config
+      version: "1.0.0"
+    spec:
+      profiles:
+      - name: web-service
+        description: "HTTP-based web applications"
+        backends:
+        - backendId: k8s-web-test
+          runtimeClass: kubernetes
+          template:
+            kind: manifests
+            ref: "test/web-template:v1.0.0"
+            values:
+              replicas: 1
+              resources:
+                requests:
+                  cpu: "100m"
+                  memory: "128Mi"
+          priority: 100
+          version: "1.0.0"
+          constraints:
+            features: ["http-ingress"]
+            resources:
+              cpu: "50m-1000m"
+              memory: "64Mi-2Gi"
+      - name: batch-job
+        description: "Batch processing workloads"
+        backends:
+        - backendId: k8s-batch-test
+          runtimeClass: kubernetes
+          template:
+            kind: manifests
+            ref: "test/batch-template:v1.0.0"
+            values:
+              restartPolicy: OnFailure
+          priority: 100
+          version: "1.0.0"
+          constraints:
+            selectors:
+            - matchExpressions:
+              - key: workload-type
+                operator: In
+                values: ["batch", "job", "cron"]
+            resources:
+              cpu: "100m-8000m"
+              memory: "256Mi-16Gi"
+      provisioners:
+      - type: postgres
+        provisioner: postgres-test-provisioner
+        defaults:
+          class: small
+        classes:
+        - name: small
+          description: "Test database"
+          parameters:
+            cpu: "100m"
+            memory: "256Mi"
+            storage: "1Gi"
+      - type: redis
+        provisioner: redis-test-provisioner
+        defaults:
+          class: small
+        classes:
+        - name: small
+          description: "Test cache"
+          parameters:
+            cpu: "50m"
+            memory: "128Mi"
+      defaults:
+        profile: web-service
+        selectors:
+        - matchExpressions:
+          - key: workload-type
+            operator: In
+            values: ["batch", "job", "cron"]
+          profile: batch-job

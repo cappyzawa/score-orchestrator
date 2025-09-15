@@ -81,9 +81,46 @@ var _ = BeforeSuite(func() {
 			_, _ = fmt.Fprintf(GinkgoWriter, "WARNING: CertManager is already installed. Skipping installation...\n")
 		}
 	}
+
+	// Deploy the manager to the cluster
+	By("deploying the manager to the cluster")
+	cmd = exec.Command("make", "deploy", fmt.Sprintf("IMG=%s", projectImage))
+	_, err = utils.Run(cmd)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to deploy the manager to the cluster")
+
+	// Deploy OrchestratorConfig for E2E tests
+	By("deploying test OrchestratorConfig")
+	cmd = exec.Command("kubectl", "apply", "-f", "test/e2e/fixtures/orchestrator-config.yaml")
+	_, err = utils.Run(cmd)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to deploy test OrchestratorConfig")
+
+	// Wait for namespace to be ready
+	By("waiting for test namespace to be ready")
+	cmd = exec.Command("kubectl", "wait", "--for=condition=Ready", "namespace/kbinit-system", "--timeout=30s")
+	if _, err := utils.Run(cmd); err != nil {
+		_, _ = fmt.Fprintf(GinkgoWriter, "Warning: namespace may not be fully ready: %v\n", err)
+	}
 })
 
 var _ = AfterSuite(func() {
+	// Clean up test OrchestratorConfig with timeout and force deletion
+	By("cleaning up test OrchestratorConfig")
+	cmd := exec.Command("kubectl", "delete", "-f", "test/e2e/fixtures/orchestrator-config.yaml", 
+		"--ignore-not-found=true", 
+		"--timeout=30s",
+		"--force", 
+		"--grace-period=0")
+	if _, err := utils.Run(cmd); err != nil {
+		_, _ = fmt.Fprintf(GinkgoWriter, "Warning: failed to clean up OrchestratorConfig: %v\n", err)
+	}
+
+	// Undeploy the manager from the cluster
+	By("undeploying the manager from the cluster")
+	cmd = exec.Command("make", "undeploy")
+	if _, err := utils.Run(cmd); err != nil {
+		_, _ = fmt.Fprintf(GinkgoWriter, "Warning: failed to undeploy manager: %v\n", err)
+	}
+
 	// Teardown CertManager after the suite if not skipped and if it was not already installed
 	if !skipCertManagerInstall && !isCertManagerAlreadyInstalled {
 		_, _ = fmt.Fprintf(GinkgoWriter, "Uninstalling CertManager...\n")
