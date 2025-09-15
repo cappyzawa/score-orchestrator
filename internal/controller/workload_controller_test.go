@@ -80,13 +80,13 @@ var _ = Describe("Workload Controller", func() {
 				return k8sClient.Get(context.Background(), client.ObjectKey{Name: testNS.Name}, &corev1.Namespace{})
 			}).Should(Succeed())
 
-			// Create score-system namespace if it doesn't exist
-			scoreSystemNS := &corev1.Namespace{
+			// Create kbinit-system namespace if it doesn't exist
+			kbinitSystemNS := &corev1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "score-system",
+					Name: "kbinit-system",
 				},
 			}
-			if err := k8sClient.Create(context.Background(), scoreSystemNS); err != nil && !apierrors.IsAlreadyExists(err) {
+			if err := k8sClient.Create(context.Background(), kbinitSystemNS); err != nil && !apierrors.IsAlreadyExists(err) {
 				Expect(err).NotTo(HaveOccurred())
 			}
 
@@ -94,7 +94,7 @@ var _ = Describe("Workload Controller", func() {
 			orchestratorConfig := &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "orchestrator-config",
-					Namespace: "score-system",
+					Namespace: "kbinit-system",
 				},
 				Data: map[string]string{
 					"config.yaml": `
@@ -217,7 +217,7 @@ spec:
 			orchestratorConfig := &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "orchestrator-config",
-					Namespace: "score-system",
+					Namespace: "kbinit-system",
 				},
 			}
 			_ = k8sClient.Delete(context.Background(), orchestratorConfig)

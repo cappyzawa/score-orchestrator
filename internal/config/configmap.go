@@ -48,7 +48,7 @@ type ConfigMapLoader struct {
 // NewConfigMapLoader creates a new ConfigMapLoader with the given Kubernetes client and options
 func NewConfigMapLoader(client kubernetes.Interface, options LoaderOptions) *ConfigMapLoader {
 	if options.Namespace == "" {
-		options.Namespace = "score-system"
+		options.Namespace = "kbinit-system"
 	}
 	if options.ConfigMapName == "" {
 		options.ConfigMapName = "orchestrator-config"
