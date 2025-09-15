@@ -36,6 +36,8 @@ import (
 	scorev1b1 "github.com/cappyzawa/score-orchestrator/api/v1b1"
 	"github.com/cappyzawa/score-orchestrator/internal/conditions"
 	"github.com/cappyzawa/score-orchestrator/internal/config"
+	"github.com/cappyzawa/score-orchestrator/internal/controller/managers"
+	"github.com/cappyzawa/score-orchestrator/internal/endpoint"
 	"github.com/cappyzawa/score-orchestrator/internal/meta"
 	internalreconcile "github.com/cappyzawa/score-orchestrator/internal/reconcile"
 )
@@ -156,11 +158,18 @@ spec:
 			configLoader := config.NewConfigMapLoader(clientset, config.DefaultLoaderOptions())
 
 			// 5) Setup WorkloadReconciler with unique name for this test
+			claimManager := managers.NewClaimManager(
+				mgr.GetClient(),
+				mgr.GetScheme(),
+				mgr.GetEventRecorderFor("claim-manager-test-"+testNS.Name),
+			)
 			reconciler := &WorkloadReconciler{
-				Client:       mgr.GetClient(),
-				Scheme:       mgr.GetScheme(),
-				Recorder:     mgr.GetEventRecorderFor("workload-controller-test-" + testNS.Name),
-				ConfigLoader: configLoader,
+				Client:          mgr.GetClient(),
+				Scheme:          mgr.GetScheme(),
+				Recorder:        mgr.GetEventRecorderFor("workload-controller-test-" + testNS.Name),
+				ConfigLoader:    configLoader,
+				EndpointDeriver: endpoint.NewEndpointDeriver(mgr.GetClient()),
+				ClaimManager:    claimManager,
 			}
 			// Setup controller directly with unique name to avoid conflicts between tests
 			err = ctrl.NewControllerManagedBy(mgr).

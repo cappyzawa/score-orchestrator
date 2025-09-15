@@ -44,17 +44,17 @@ const (
 func (r *WorkloadReconciler) handleResourceClaims(ctx context.Context, workload *scorev1b1.Workload) ([]scorev1b1.ResourceClaim, status.ClaimAggregation, error) {
 	log := ctrl.LoggerFrom(ctx)
 
-	// Create/update ResourceClaims
-	if err := reconcile.UpsertResourceClaims(ctx, r.Client, workload); err != nil {
-		log.Error(err, "Failed to upsert ResourceClaims")
+	// Create/update ResourceClaims using ClaimManager
+	if err := r.ClaimManager.EnsureClaims(ctx, workload); err != nil {
+		log.Error(err, "Failed to ensure ResourceClaims")
 		r.Recorder.Eventf(workload, EventTypeWarning, EventReasonClaimError, "Failed to create resource claims: %v", err)
 		return nil, status.ClaimAggregation{}, err
 	}
 
-	log.V(1).Info("ResourceClaims upserted successfully")
+	log.V(1).Info("ResourceClaims ensured successfully")
 
-	// Aggregate claim statuses
-	claims, err := GetResourceClaimsForWorkload(ctx, r.Client, workload)
+	// Get and aggregate claim statuses using ClaimManager
+	claims, err := r.ClaimManager.GetClaims(ctx, workload)
 	if err != nil {
 		log.Error(err, "Failed to get ResourceClaims")
 		return nil, status.ClaimAggregation{}, err
@@ -62,7 +62,7 @@ func (r *WorkloadReconciler) handleResourceClaims(ctx context.Context, workload 
 
 	log.V(1).Info("Retrieved ResourceClaims", "count", len(claims))
 
-	agg := status.AggregateClaimStatuses(claims)
+	agg := r.ClaimManager.AggregateStatus(claims)
 	status.UpdateWorkloadStatusFromAggregation(workload, agg)
 
 	return claims, agg, nil
