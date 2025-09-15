@@ -43,6 +43,7 @@ type WorkloadReconciler struct {
 	ConfigLoader    config.ConfigLoader
 	EndpointDeriver *endpoint.EndpointDeriver
 	ClaimManager    *managers.ClaimManager
+	PlanManager     *managers.PlanManager
 }
 
 // +kubebuilder:rbac:groups=score.dev,resources=workloads,verbs=get;list;watch;update;patch

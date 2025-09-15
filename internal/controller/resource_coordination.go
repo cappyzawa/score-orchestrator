@@ -18,15 +18,10 @@ package controller
 
 import (
 	"context"
-	"fmt"
-	"strings"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	scorev1b1 "github.com/cappyzawa/score-orchestrator/api/v1b1"
-	"github.com/cappyzawa/score-orchestrator/internal/conditions"
-	"github.com/cappyzawa/score-orchestrator/internal/reconcile"
 	"github.com/cappyzawa/score-orchestrator/internal/status"
 )
 
@@ -34,10 +29,6 @@ import (
 const (
 	// EventReasonClaimError indicates an error in resource claiming
 	EventReasonClaimError = "ClaimError"
-	// EventReasonPlanCreated indicates successful workload plan creation
-	EventReasonPlanCreated = "PlanCreated"
-	// EventReasonPlanError indicates an error in workload plan creation
-	EventReasonPlanError = "PlanError"
 )
 
 // handleResourceClaims creates/updates ResourceClaims and aggregates their statuses
@@ -70,43 +61,5 @@ func (r *WorkloadReconciler) handleResourceClaims(ctx context.Context, workload 
 
 // handleWorkloadPlan creates WorkloadPlan if bindings are ready
 func (r *WorkloadReconciler) handleWorkloadPlan(ctx context.Context, workload *scorev1b1.Workload, claims []scorev1b1.ResourceClaim, agg status.ClaimAggregation) error {
-	log := ctrl.LoggerFrom(ctx)
-
-	// Create WorkloadPlan if claims are ready
-	if agg.Ready {
-		log.V(1).Info("Claims are ready, creating WorkloadPlan")
-		selectedBackend, err := r.selectBackend(ctx, workload)
-		if err != nil {
-			log.Error(err, "Failed to select backend")
-			conditions.SetCondition(&workload.Status.Conditions,
-				conditions.ConditionRuntimeReady,
-				metav1.ConditionFalse,
-				conditions.ReasonRuntimeSelecting,
-				fmt.Sprintf("Backend selection failed: %v", err))
-			return err
-		}
-
-		if err := reconcile.UpsertWorkloadPlan(ctx, r.Client, workload, claims, selectedBackend); err != nil {
-			log.Error(err, "Failed to upsert WorkloadPlan")
-
-			// Check if this is a projection error (missing outputs)
-			if strings.Contains(err.Error(), "missing required outputs for projection") {
-				conditions.SetCondition(&workload.Status.Conditions,
-					conditions.ConditionRuntimeReady,
-					metav1.ConditionFalse,
-					conditions.ReasonProjectionError,
-					fmt.Sprintf("Cannot create plan: %v", err))
-				r.Recorder.Eventf(workload, EventTypeWarning, EventReasonProjectionError, "Missing required resource outputs: %v", err)
-				return err
-			}
-
-			r.Recorder.Eventf(workload, EventTypeWarning, EventReasonPlanError, "Failed to create workload plan: %v", err)
-			return err
-		}
-		r.Recorder.Eventf(workload, EventTypeNormal, EventReasonPlanCreated, "WorkloadPlan created successfully")
-	} else {
-		log.V(1).Info("Claims are not ready yet", "ready", agg.Ready, "reason", agg.Reason, "message", agg.Message)
-	}
-
-	return nil
+	return r.PlanManager.EnsurePlan(ctx, workload, claims, agg)
 }

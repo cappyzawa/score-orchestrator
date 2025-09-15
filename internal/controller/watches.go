@@ -94,31 +94,3 @@ func getResourceClaimsWithoutIndex(ctx context.Context, c client.Client, workloa
 
 	return claimList.Items, nil
 }
-
-// GetWorkloadPlanForWorkload retrieves the WorkloadPlan for a given Workload
-func GetWorkloadPlanForWorkload(ctx context.Context, c client.Client, workload *scorev1b1.Workload) (*scorev1b1.WorkloadPlan, error) {
-	planList := &scorev1b1.WorkloadPlanList{}
-	key := fmt.Sprintf("%s/%s", workload.Namespace, workload.Name)
-
-	// Try using indexer first, fallback to label selector for tests
-	err := c.List(ctx, planList, client.MatchingFields{meta.IndexWorkloadPlanByWorkload: key})
-	if err != nil && err.Error() == "field label not supported: workloadplan.workloadRef" {
-		// Fallback: use label selector when indexer is not available (e.g., in tests)
-		err = c.List(ctx, planList,
-			client.InNamespace(workload.Namespace),
-			client.MatchingLabels{"score.dev/workload": workload.Name})
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	if len(planList.Items) == 0 {
-		return nil, nil // Not found
-	}
-
-	if len(planList.Items) > 1 {
-		return nil, fmt.Errorf("multiple WorkloadPlans found for Workload %s/%s", workload.Namespace, workload.Name)
-	}
-
-	return &planList.Items[0], nil
-}

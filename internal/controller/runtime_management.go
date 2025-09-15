@@ -26,7 +26,6 @@ import (
 
 	scorev1b1 "github.com/cappyzawa/score-orchestrator/api/v1b1"
 	"github.com/cappyzawa/score-orchestrator/internal/conditions"
-	"github.com/cappyzawa/score-orchestrator/internal/selection"
 )
 
 // Runtime management constants
@@ -43,41 +42,13 @@ const (
 	EventReasonReady = "Ready"
 )
 
-// selectBackend selects the backend for the workload using deterministic profile selection pipeline
-// ADR-0003: Runtime selection is now based on deterministic profile selection pipeline
-func (r *WorkloadReconciler) selectBackend(ctx context.Context, workload *scorev1b1.Workload) (*selection.SelectedBackend, error) {
-	log := ctrl.LoggerFrom(ctx)
-
-	// Load Orchestrator Configuration
-	orchestratorConfig, err := r.ConfigLoader.LoadConfig(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load orchestrator config: %w", err)
-	}
-
-	// Create ProfileSelector
-	selector := selection.NewProfileSelector(orchestratorConfig, r.Client)
-
-	// Select backend using deterministic pipeline
-	selectedBackend, err := selector.SelectBackend(ctx, workload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to select backend: %w", err)
-	}
-
-	log.V(1).Info("Selected backend for workload",
-		"backend", selectedBackend.BackendID,
-		"runtime", selectedBackend.RuntimeClass,
-		"template", fmt.Sprintf("%s:%s", selectedBackend.Template.Kind, selectedBackend.Template.Ref))
-
-	return selectedBackend, nil
-}
-
 // updateRuntimeStatus updates RuntimeReady condition and endpoint using WorkloadPlan templates
 // ADR-0003: Endpoint derivation is now based on WorkloadPlan templates
 func (r *WorkloadReconciler) updateRuntimeStatus(ctx context.Context, workload *scorev1b1.Workload) {
 	log := ctrl.LoggerFrom(ctx)
 
 	// Check if we have a WorkloadPlan (indicates runtime is being engaged)
-	plan, err := GetWorkloadPlanForWorkload(ctx, r.Client, workload)
+	plan, err := r.PlanManager.GetPlan(ctx, workload)
 	if err != nil {
 		log.Error(err, "Failed to get WorkloadPlan")
 		conditions.SetCondition(&workload.Status.Conditions,
