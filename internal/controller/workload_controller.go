@@ -28,7 +28,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 
 	scorev1b1 "github.com/cappyzawa/score-orchestrator/api/v1b1"
-	"github.com/cappyzawa/score-orchestrator/internal/conditions"
 	"github.com/cappyzawa/score-orchestrator/internal/config"
 	"github.com/cappyzawa/score-orchestrator/internal/controller/managers"
 	"github.com/cappyzawa/score-orchestrator/internal/endpoint"
@@ -44,6 +43,7 @@ type WorkloadReconciler struct {
 	EndpointDeriver *endpoint.EndpointDeriver
 	ClaimManager    *managers.ClaimManager
 	PlanManager     *managers.PlanManager
+	StatusManager   *managers.StatusManager
 }
 
 // +kubebuilder:rbac:groups=score.dev,resources=workloads,verbs=get;list;watch;update;patch
@@ -85,10 +85,7 @@ func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	// Validate inputs and apply policy
 	inputsValid, reason, message := r.validateInputsAndPolicy(ctx, workload)
-	conditions.SetCondition(&workload.Status.Conditions,
-		conditions.ConditionInputsValid,
-		inputsValidToConditionStatus(inputsValid),
-		reason, message)
+	r.StatusManager.SetInputsValidCondition(workload, inputsValid, reason, message)
 
 	if !inputsValid {
 		log.V(1).Info("Inputs validation failed", "reason", reason, "message", message)
@@ -112,8 +109,12 @@ func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
-	// Compute final status
-	r.computeFinalStatus(ctx, workload)
+	// Compute final status using StatusManager
+	plan, _ := r.PlanManager.GetPlan(ctx, workload) // Ignore error - nil plan is handled
+	if err := r.StatusManager.ComputeFinalStatus(ctx, workload, plan); err != nil {
+		log.Error(err, "Failed to compute final status")
+		return ctrl.Result{}, err
+	}
 
 	return r.updateStatusAndReturn(ctx, workload)
 }

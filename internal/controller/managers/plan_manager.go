@@ -22,7 +22,6 @@ import (
 	"strings"
 
 	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -63,16 +62,18 @@ type PlanManager struct {
 	recorder        record.EventRecorder
 	configLoader    config.ConfigLoader
 	endpointDeriver *endpoint.EndpointDeriver
+	statusManager   *StatusManager
 }
 
 // NewPlanManager creates a new PlanManager instance
-func NewPlanManager(c client.Client, scheme *runtime.Scheme, recorder record.EventRecorder, configLoader config.ConfigLoader, endpointDeriver *endpoint.EndpointDeriver) *PlanManager {
+func NewPlanManager(c client.Client, scheme *runtime.Scheme, recorder record.EventRecorder, configLoader config.ConfigLoader, endpointDeriver *endpoint.EndpointDeriver, statusManager *StatusManager) *PlanManager {
 	return &PlanManager{
 		client:          c,
 		scheme:          scheme,
 		recorder:        recorder,
 		configLoader:    configLoader,
 		endpointDeriver: endpointDeriver,
+		statusManager:   statusManager,
 	}
 }
 
@@ -86,9 +87,9 @@ func (pm *PlanManager) EnsurePlan(ctx context.Context, workload *scorev1b1.Workl
 		selectedBackend, err := pm.SelectBackend(ctx, workload)
 		if err != nil {
 			log.Error(err, "Failed to select backend")
-			conditions.SetCondition(&workload.Status.Conditions,
-				conditions.ConditionRuntimeReady,
-				metav1.ConditionFalse,
+			pm.statusManager.SetRuntimeReadyCondition(
+				workload,
+				false,
 				conditions.ReasonRuntimeSelecting,
 				fmt.Sprintf("Backend selection failed: %v", err))
 			return err
@@ -99,9 +100,9 @@ func (pm *PlanManager) EnsurePlan(ctx context.Context, workload *scorev1b1.Workl
 
 			// Check if this is a projection error (missing outputs)
 			if strings.Contains(err.Error(), "missing required outputs for projection") {
-				conditions.SetCondition(&workload.Status.Conditions,
-					conditions.ConditionRuntimeReady,
-					metav1.ConditionFalse,
+				pm.statusManager.SetRuntimeReadyCondition(
+					workload,
+					false,
 					conditions.ReasonProjectionError,
 					fmt.Sprintf("Cannot create plan: %v", err))
 				pm.recorder.Eventf(workload, EventTypeWarning, EventReasonProjectionError, "Missing required resource outputs: %v", err)

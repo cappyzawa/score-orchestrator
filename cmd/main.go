@@ -212,6 +212,14 @@ func main() {
 		mgr.GetEventRecorderFor("claim-manager"),
 	)
 
+	// Create StatusManager
+	statusManager := managers.NewStatusManager(
+		mgr.GetClient(),
+		mgr.GetScheme(),
+		mgr.GetEventRecorderFor("status-manager"),
+		endpoint.NewEndpointDeriver(mgr.GetClient()),
+	)
+
 	// Create PlanManager
 	planManager := managers.NewPlanManager(
 		mgr.GetClient(),
@@ -219,6 +227,7 @@ func main() {
 		mgr.GetEventRecorderFor("plan-manager"),
 		configLoader,
 		endpoint.NewEndpointDeriver(mgr.GetClient()),
+		statusManager,
 	)
 
 	if err := (&controller.WorkloadReconciler{
@@ -229,6 +238,7 @@ func main() {
 		EndpointDeriver: endpoint.NewEndpointDeriver(mgr.GetClient()),
 		ClaimManager:    claimManager,
 		PlanManager:     planManager,
+		StatusManager:   statusManager,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Workload")
 		os.Exit(1)

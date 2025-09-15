@@ -110,7 +110,9 @@ func TestPlanManager_EnsurePlan(t *testing.T) {
 		endpointDeriver := endpoint.NewEndpointDeriver(fakeClient)
 		mockRecorder := &mockEventRecorder{}
 
-		pm := NewPlanManager(fakeClient, scheme, mockRecorder, mockConfigLoader, endpointDeriver)
+		// Create a status manager for the test
+		statusManager := NewStatusManager(fakeClient, scheme, mockRecorder, endpointDeriver)
+		pm := NewPlanManager(fakeClient, scheme, mockRecorder, mockConfigLoader, endpointDeriver, statusManager)
 
 		// Mock config loading
 		testConfig := &scorev1b1.OrchestratorConfig{
@@ -170,7 +172,9 @@ func TestPlanManager_EnsurePlan(t *testing.T) {
 		endpointDeriver := endpoint.NewEndpointDeriver(fakeClient)
 		mockRecorder := &mockEventRecorder{}
 
-		pm := NewPlanManager(fakeClient, scheme, mockRecorder, mockConfigLoader, endpointDeriver)
+		// Create a status manager for the test
+		statusManager := NewStatusManager(fakeClient, scheme, mockRecorder, endpointDeriver)
+		pm := NewPlanManager(fakeClient, scheme, mockRecorder, mockConfigLoader, endpointDeriver, statusManager)
 
 		agg := status.ClaimAggregation{
 			Ready:   false,
@@ -199,7 +203,9 @@ func TestPlanManager_EnsurePlan(t *testing.T) {
 		endpointDeriver := endpoint.NewEndpointDeriver(fakeClient)
 		mockRecorder := &mockEventRecorder{}
 
-		pm := NewPlanManager(fakeClient, scheme, mockRecorder, mockConfigLoader, endpointDeriver)
+		// Create a status manager for the test
+		statusManager := NewStatusManager(fakeClient, scheme, mockRecorder, endpointDeriver)
+		pm := NewPlanManager(fakeClient, scheme, mockRecorder, mockConfigLoader, endpointDeriver, statusManager)
 
 		// Mock config loading failure
 		mockConfigLoader.On("LoadConfig", mock.Anything).Return((*scorev1b1.OrchestratorConfig)(nil), assert.AnError)
@@ -257,7 +263,9 @@ func TestPlanManager_GetPlan(t *testing.T) {
 		endpointDeriver := endpoint.NewEndpointDeriver(fakeClient)
 		mockRecorder := &mockEventRecorder{}
 
-		pm := NewPlanManager(fakeClient, scheme, mockRecorder, mockConfigLoader, endpointDeriver)
+		// Create a status manager for the test
+		statusManager := NewStatusManager(fakeClient, scheme, mockRecorder, endpointDeriver)
+		pm := NewPlanManager(fakeClient, scheme, mockRecorder, mockConfigLoader, endpointDeriver, statusManager)
 
 		plan, err := pm.GetPlan(context.Background(), workload)
 		require.NoError(t, err)
@@ -272,7 +280,9 @@ func TestPlanManager_GetPlan(t *testing.T) {
 		endpointDeriver := endpoint.NewEndpointDeriver(fakeClient)
 		mockRecorder := &mockEventRecorder{}
 
-		pm := NewPlanManager(fakeClient, scheme, mockRecorder, mockConfigLoader, endpointDeriver)
+		// Create a status manager for the test
+		statusManager := NewStatusManager(fakeClient, scheme, mockRecorder, endpointDeriver)
+		pm := NewPlanManager(fakeClient, scheme, mockRecorder, mockConfigLoader, endpointDeriver, statusManager)
 
 		plan, err := pm.GetPlan(context.Background(), workload)
 		require.Error(t, err)
@@ -305,7 +315,9 @@ func TestPlanManager_SelectBackend(t *testing.T) {
 		endpointDeriver := endpoint.NewEndpointDeriver(fakeClient)
 		mockRecorder := &mockEventRecorder{}
 
-		pm := NewPlanManager(fakeClient, scheme, mockRecorder, mockConfigLoader, endpointDeriver)
+		// Create a status manager for the test
+		statusManager := NewStatusManager(fakeClient, scheme, mockRecorder, endpointDeriver)
+		pm := NewPlanManager(fakeClient, scheme, mockRecorder, mockConfigLoader, endpointDeriver, statusManager)
 
 		testConfig := &scorev1b1.OrchestratorConfig{
 			Spec: scorev1b1.OrchestratorConfigSpec{
@@ -348,7 +360,9 @@ func TestPlanManager_SelectBackend(t *testing.T) {
 		endpointDeriver := endpoint.NewEndpointDeriver(fakeClient)
 		mockRecorder := &mockEventRecorder{}
 
-		pm := NewPlanManager(fakeClient, scheme, mockRecorder, mockConfigLoader, endpointDeriver)
+		// Create a status manager for the test
+		statusManager := NewStatusManager(fakeClient, scheme, mockRecorder, endpointDeriver)
+		pm := NewPlanManager(fakeClient, scheme, mockRecorder, mockConfigLoader, endpointDeriver, statusManager)
 
 		mockConfigLoader.On("LoadConfig", mock.Anything).Return((*scorev1b1.OrchestratorConfig)(nil), assert.AnError)
 
