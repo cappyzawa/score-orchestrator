@@ -1,0 +1,20 @@
+apiVersion: score.dev/v1b1
+kind: Workload
+metadata:
+  name: user-hint-test
+  namespace: kbinit-system
+  annotations:
+    score.dev/profile: "batch-job"
+  labels:
+    team: e2e-test
+spec:
+  containers:
+    app:
+      image: nginx:latest
+  service:
+    ports:
+    - port: 8080
+  resources:
+    data:
+      type: postgres
+      class: small

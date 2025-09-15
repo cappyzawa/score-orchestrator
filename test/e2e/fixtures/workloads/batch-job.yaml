@@ -1,0 +1,19 @@
+apiVersion: score.dev/v1b1
+kind: Workload
+metadata:
+  name: batch-job-test
+  namespace: kbinit-system
+  labels:
+    workload-type: batch
+    team: e2e-test
+spec:
+  containers:
+    worker:
+      image: busybox:latest
+      command: ["sleep", "300"]
+      variables:
+        JOB_TYPE: "batch"
+  resources:
+    storage:
+      type: postgres
+      class: small

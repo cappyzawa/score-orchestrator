@@ -81,9 +81,31 @@ var _ = BeforeSuite(func() {
 			_, _ = fmt.Fprintf(GinkgoWriter, "WARNING: CertManager is already installed. Skipping installation...\n")
 		}
 	}
+
+	// Deploy the manager to the cluster
+	By("deploying the manager to the cluster")
+	cmd = exec.Command("make", "deploy", fmt.Sprintf("IMG=%s", projectImage))
+	_, err = utils.Run(cmd)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to deploy the manager to the cluster")
+
+	// Deploy OrchestratorConfig for E2E tests
+	By("deploying test OrchestratorConfig")
+	cmd = exec.Command("kubectl", "apply", "-f", "test/e2e/fixtures/orchestrator-config.yaml")
+	_, err = utils.Run(cmd)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to deploy test OrchestratorConfig")
 })
 
 var _ = AfterSuite(func() {
+	// Clean up test OrchestratorConfig
+	By("cleaning up test OrchestratorConfig")
+	cmd := exec.Command("kubectl", "delete", "-f", "test/e2e/fixtures/orchestrator-config.yaml", "--ignore-not-found=true")
+	utils.Run(cmd)
+
+	// Undeploy the manager from the cluster
+	By("undeploying the manager from the cluster")
+	cmd = exec.Command("make", "undeploy")
+	utils.Run(cmd)
+
 	// Teardown CertManager after the suite if not skipped and if it was not already installed
 	if !skipCertManagerInstall && !isCertManagerAlreadyInstalled {
 		_, _ = fmt.Fprintf(GinkgoWriter, "Uninstalling CertManager...\n")

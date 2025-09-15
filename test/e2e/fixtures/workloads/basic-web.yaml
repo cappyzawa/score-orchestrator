@@ -1,0 +1,25 @@
+apiVersion: score.dev/v1b1
+kind: Workload
+metadata:
+  name: basic-web-test
+  namespace: kbinit-system
+  labels:
+    app: basic-web
+    team: e2e-test
+spec:
+  containers:
+    app:
+      image: nginx:latest
+      variables:
+        PORT: "8080"
+  service:
+    ports:
+    - port: 8080
+      protocol: TCP
+  resources:
+    db:
+      type: postgres
+      class: small
+    cache:
+      type: redis
+      class: small
