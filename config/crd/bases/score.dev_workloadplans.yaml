@@ -16,7 +16,17 @@ spec:
     singular: workloadplan
   scope: Namespaced
   versions:
-  - name: v1b1
+  - additionalPrinterColumns:
+    - jsonPath: .spec.runtimeClass
+      name: RUNTIME
+      type: string
+    - jsonPath: .spec.workloadRef.name
+      name: WORKLOAD
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: AGE
+      type: date
+    name: v1b1
     schema:
       openAPIV3Schema:
         description: |-
@@ -213,3 +223,4 @@ spec:
         type: object
     served: true
     storage: true
+    subresources: {}

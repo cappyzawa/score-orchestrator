@@ -23,6 +23,10 @@ import (
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced,shortName=wplan
+// +kubebuilder:printcolumn:name="RUNTIME",type="string",JSONPath=".spec.runtimeClass"
+// +kubebuilder:printcolumn:name="WORKLOAD",type="string",JSONPath=".spec.workloadRef.name"
+// +kubebuilder:printcolumn:name="AGE",type="date",JSONPath=".metadata.creationTimestamp"
+
 // WorkloadPlan is an internal contract from Orchestrator to the Runtime controller.
 // It must not be user-visible via RBAC; status is intentionally omitted.
 type WorkloadPlan struct {

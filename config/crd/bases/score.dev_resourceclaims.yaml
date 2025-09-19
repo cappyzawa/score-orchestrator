@@ -16,7 +16,23 @@ spec:
     singular: resourceclaim
   scope: Namespaced
   versions:
-  - name: v1b1
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: PHASE
+      type: string
+    - jsonPath: .spec.type
+      name: TYPE
+      type: string
+    - jsonPath: .spec.workloadRef.name
+      name: WORKLOAD
+      type: string
+    - jsonPath: .status.outputsAvailable
+      name: OUTPUTS
+      type: boolean
+    - jsonPath: .metadata.creationTimestamp
+      name: AGE
+      type: date
+    name: v1b1
     schema:
       openAPIV3Schema:
         description: |-
