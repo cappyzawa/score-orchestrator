@@ -24,6 +24,12 @@ import (
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced,shortName=rc
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="PHASE",type="string",JSONPath=".status.phase"
+// +kubebuilder:printcolumn:name="TYPE",type="string",JSONPath=".spec.type"
+// +kubebuilder:printcolumn:name="WORKLOAD",type="string",JSONPath=".spec.workloadRef.name"
+// +kubebuilder:printcolumn:name="OUTPUTS",type="boolean",JSONPath=".status.outputsAvailable"
+// +kubebuilder:printcolumn:name="AGE",type="date",JSONPath=".metadata.creationTimestamp"
+
 // ResourceClaim represents a single resource dependency resolution contract.
 // Provisioners drive it to Bound and publish standardized outputs for consumption by runtimes.
 type ResourceClaim struct {

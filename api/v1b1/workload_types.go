@@ -242,6 +242,10 @@ type WorkloadStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:shortName=wl
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="READY",type="string",JSONPath=".status.conditions[?(@.type=='Ready')].status"
+// +kubebuilder:printcolumn:name="ENDPOINT",type="string",JSONPath=".status.endpoint"
+// +kubebuilder:printcolumn:name="CLAIMS",type="string",JSONPath=".status.claims"
+// +kubebuilder:printcolumn:name="AGE",type="date",JSONPath=".metadata.creationTimestamp"
 
 // Workload is the Schema for the workloads API
 type Workload struct {

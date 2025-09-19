@@ -16,7 +16,20 @@ spec:
     singular: workload
   scope: Namespaced
   versions:
-  - name: v1b1
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=='Ready')].status
+      name: READY
+      type: string
+    - jsonPath: .status.endpoint
+      name: ENDPOINT
+      type: string
+    - jsonPath: .status.claims
+      name: CLAIMS
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: AGE
+      type: date
+    name: v1b1
     schema:
       openAPIV3Schema:
         description: Workload is the Schema for the workloads API
