@@ -28,6 +28,7 @@ type OrchestratorConfig struct {
 	Kind       string                 `json:"kind" yaml:"kind"`
 	Metadata   OrchestratorConfigMeta `json:"metadata" yaml:"metadata"`
 	Spec       OrchestratorConfigSpec `json:"spec" yaml:"spec"`
+	Reconciler *runtime.RawExtension  `json:"reconciler,omitempty" yaml:"reconciler,omitempty"`
 }
 
 // OrchestratorConfigMeta contains metadata for the orchestrator configuration

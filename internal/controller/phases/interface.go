@@ -10,6 +10,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	scorev1b1 "github.com/cappyzawa/score-orchestrator/api/v1b1"
+	"github.com/cappyzawa/score-orchestrator/internal/config"
 	"github.com/cappyzawa/score-orchestrator/internal/controller/managers"
 	"github.com/cappyzawa/score-orchestrator/internal/status"
 )
@@ -36,6 +37,8 @@ type PhaseContext struct {
 	Logger logr.Logger
 	// Recorder is the event recorder
 	Recorder record.EventRecorder
+	// ReconcilerConfig contains configuration settings for the reconciler
+	ReconcilerConfig *config.ReconcilerConfig
 	// Managers provide domain-specific operations
 	ClaimManager  *managers.ClaimManager
 	PlanManager   *managers.PlanManager

@@ -16,15 +16,8 @@ limitations under the License.
 
 package controller
 
-import (
-	"time"
-)
-
 // Workload lifecycle management constants
-const (
-	// DefaultRequeueDelay is the default delay for requeuing when waiting for resources during deletion
-	DefaultRequeueDelay = 30 * time.Second
-)
+// Note: DefaultRequeueDelay is now configured via ReconcilerConfig
 
 // Workload lifecycle events
 const (

@@ -2,13 +2,11 @@ package phases
 
 import (
 	"context"
-	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
-// ConflictRequeueDelay is the delay for requeuing on resource version conflicts
-const ConflictRequeueDelay = 1 * time.Second
+// Note: ConflictRequeueDelay is now configured via ReconcilerConfig
 
 // StatusPhase handles final status computation and updates
 type StatusPhase struct{}
@@ -34,7 +32,8 @@ func (p *StatusPhase) Execute(ctx context.Context, phaseCtx *PhaseContext) Phase
 		if apierrors.IsConflict(err) {
 			// Resource version conflict - requeue for retry
 			log.V(1).Info("Resource version conflict, requeuing", "error", err)
-			return PhaseResult{Requeue: true, RequeueAfter: ConflictRequeueDelay}
+			conflictDelay := phaseCtx.ReconcilerConfig.Retry.ConflictRequeueDelay
+			return PhaseResult{Requeue: true, RequeueAfter: conflictDelay}
 		}
 		log.Error(err, "Failed to update Workload status")
 		return PhaseResult{Error: err}

@@ -2,13 +2,11 @@ package phases
 
 import (
 	"context"
-	"time"
 
 	"github.com/cappyzawa/score-orchestrator/internal/reconcile"
 )
 
-// DefaultRequeueDelay is the default delay for requeuing when waiting for resources during deletion
-const DefaultRequeueDelay = 30 * time.Second
+// Note: DefaultRequeueDelay is now configured via ReconcilerConfig
 
 // Event constants for deletion phase
 const (
@@ -43,7 +41,8 @@ func (p *DeletionPhase) Execute(ctx context.Context, phaseCtx *PhaseContext) Pha
 
 	if len(claims) > 0 {
 		log.V(1).Info("Waiting for ResourceClaims to be cleaned up", "count", len(claims))
-		return PhaseResult{Requeue: true, RequeueAfter: DefaultRequeueDelay}
+		requeueDelay := phaseCtx.ReconcilerConfig.Retry.DefaultRequeueDelay
+		return PhaseResult{Requeue: true, RequeueAfter: requeueDelay}
 	}
 
 	// Remove finalizer
