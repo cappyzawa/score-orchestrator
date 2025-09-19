@@ -156,7 +156,7 @@ Provisioners watch this resource, provision/bind concrete services, and publish 
 | ------------------------------------------- | ------- | ----------------------------------------- |
 | `phase`                                     | **Yes** | `Pending \| Claiming \| Bound \| Failed`   |
 | `reason` / `message`                        | No      | abstract                                  |
-| `outputs`                                   | No*     | see CEL: at least one subfield if present |
+| `outputs`                                   | No*     | pointer type: nil when unavailable, CEL validates when present |
 | `outputsAvailable`                          | **Yes** | boolean gate for consumers                |
 | `observedGeneration` / `lastTransitionTime` | No      | bookkeeping                               |
 

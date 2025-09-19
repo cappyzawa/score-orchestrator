@@ -121,7 +121,7 @@ type ResourceClaimStatus struct {
 	// Message is a short, single-sentence human message aligned with the reason.
 	Message string `json:"message,omitempty"`
 	// Outputs are standardized resolver outputs for consumption by runtimes.
-	Outputs ResourceClaimOutputs `json:"outputs,omitempty"`
+	Outputs *ResourceClaimOutputs `json:"outputs,omitempty"`
 	// OutputsAvailable indicates whether outputs are ready for consumption.
 	OutputsAvailable bool `json:"outputsAvailable,omitempty"`
 

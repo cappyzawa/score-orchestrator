@@ -111,7 +111,7 @@ var _ = Describe("PlanManager", func() {
 				Status: scorev1b1.ResourceClaimStatus{
 					Phase:            "Bound",
 					OutputsAvailable: true,
-					Outputs: scorev1b1.ResourceClaimOutputs{
+					Outputs: &scorev1b1.ResourceClaimOutputs{
 						URI: stringPtr("postgres://localhost:5432/test"),
 					},
 				},

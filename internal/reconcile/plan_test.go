@@ -55,7 +55,7 @@ func TestValidateProjectionRequirements(t *testing.T) {
 					Spec: scorev1b1.ResourceClaimSpec{Key: "db"},
 					Status: scorev1b1.ResourceClaimStatus{
 						OutputsAvailable: true,
-						Outputs: scorev1b1.ResourceClaimOutputs{
+						Outputs: &scorev1b1.ResourceClaimOutputs{
 							URI: ptr.To("postgres://localhost/db"),
 						},
 					},
@@ -64,7 +64,7 @@ func TestValidateProjectionRequirements(t *testing.T) {
 					Spec: scorev1b1.ResourceClaimSpec{Key: "cache"},
 					Status: scorev1b1.ResourceClaimStatus{
 						OutputsAvailable: true,
-						Outputs: scorev1b1.ResourceClaimOutputs{
+						Outputs: &scorev1b1.ResourceClaimOutputs{
 							URI: ptr.To("redis://localhost/0"),
 						},
 					},
@@ -112,7 +112,7 @@ func TestValidateProjectionRequirements(t *testing.T) {
 					Spec: scorev1b1.ResourceClaimSpec{Key: "db"},
 					Status: scorev1b1.ResourceClaimStatus{
 						OutputsAvailable: true,
-						Outputs: scorev1b1.ResourceClaimOutputs{
+						Outputs: &scorev1b1.ResourceClaimOutputs{
 							SecretRef: &scorev1b1.LocalObjectReference{Name: "db-secret"},
 							// URI is missing
 						},
@@ -145,7 +145,7 @@ func TestValidateProjectionRequirements(t *testing.T) {
 					Spec: scorev1b1.ResourceClaimSpec{Key: "storage"},
 					Status: scorev1b1.ResourceClaimStatus{
 						OutputsAvailable: true,
-						Outputs: scorev1b1.ResourceClaimOutputs{
+						Outputs: &scorev1b1.ResourceClaimOutputs{
 							SecretRef: &scorev1b1.LocalObjectReference{Name: "storage-secret"},
 						},
 					},
@@ -176,7 +176,7 @@ func TestValidateProjectionRequirements(t *testing.T) {
 					Spec: scorev1b1.ResourceClaimSpec{Key: "tls"},
 					Status: scorev1b1.ResourceClaimStatus{
 						OutputsAvailable: true,
-						Outputs: scorev1b1.ResourceClaimOutputs{
+						Outputs: &scorev1b1.ResourceClaimOutputs{
 							Cert: &scorev1b1.CertificateOutput{
 								Data: map[string][]byte{
 									"cert.pem": []byte("certificate-data"),
@@ -256,7 +256,7 @@ func TestBuildProjection(t *testing.T) {
 					Spec: scorev1b1.ResourceClaimSpec{Key: "db"},
 					Status: scorev1b1.ResourceClaimStatus{
 						OutputsAvailable: true,
-						Outputs: scorev1b1.ResourceClaimOutputs{
+						Outputs: &scorev1b1.ResourceClaimOutputs{
 							URI: ptr.To("postgres://localhost/db"),
 						},
 					},
@@ -265,7 +265,7 @@ func TestBuildProjection(t *testing.T) {
 					Spec: scorev1b1.ResourceClaimSpec{Key: "auth"},
 					Status: scorev1b1.ResourceClaimStatus{
 						OutputsAvailable: true,
-						Outputs: scorev1b1.ResourceClaimOutputs{
+						Outputs: &scorev1b1.ResourceClaimOutputs{
 							SecretRef: &scorev1b1.LocalObjectReference{Name: "auth-secret"},
 						},
 					},
@@ -308,7 +308,7 @@ func TestBuildProjection(t *testing.T) {
 					Spec: scorev1b1.ResourceClaimSpec{Key: "config"},
 					Status: scorev1b1.ResourceClaimStatus{
 						OutputsAvailable: true,
-						Outputs: scorev1b1.ResourceClaimOutputs{
+						Outputs: &scorev1b1.ResourceClaimOutputs{
 							ConfigMapRef: &scorev1b1.LocalObjectReference{Name: "config-map"},
 						},
 					},
@@ -317,7 +317,7 @@ func TestBuildProjection(t *testing.T) {
 					Spec: scorev1b1.ResourceClaimSpec{Key: "auth"},
 					Status: scorev1b1.ResourceClaimStatus{
 						OutputsAvailable: true,
-						Outputs: scorev1b1.ResourceClaimOutputs{
+						Outputs: &scorev1b1.ResourceClaimOutputs{
 							SecretRef: &scorev1b1.LocalObjectReference{Name: "auth-secret"},
 						},
 					},
@@ -352,7 +352,7 @@ func TestBuildProjection(t *testing.T) {
 					Spec: scorev1b1.ResourceClaimSpec{Key: "tls"},
 					Status: scorev1b1.ResourceClaimStatus{
 						OutputsAvailable: true,
-						Outputs: scorev1b1.ResourceClaimOutputs{
+						Outputs: &scorev1b1.ResourceClaimOutputs{
 							Cert: &scorev1b1.CertificateOutput{
 								SecretName: ptr.To("tls-secret"),
 							},
@@ -380,7 +380,7 @@ func TestBuildProjection(t *testing.T) {
 					Spec: scorev1b1.ResourceClaimSpec{Key: "database"},
 					Status: scorev1b1.ResourceClaimStatus{
 						OutputsAvailable: true,
-						Outputs: scorev1b1.ResourceClaimOutputs{
+						Outputs: &scorev1b1.ResourceClaimOutputs{
 							URI: ptr.To("postgres://localhost/db"),
 						},
 					},
@@ -577,7 +577,7 @@ func TestIntegrationWithSelectedBackend(t *testing.T) {
 			},
 			Status: scorev1b1.ResourceClaimStatus{
 				OutputsAvailable: true,
-				Outputs: scorev1b1.ResourceClaimOutputs{
+				Outputs: &scorev1b1.ResourceClaimOutputs{
 					URI: ptr.To("postgres://prod-db:5432/myapp"),
 				},
 			},

@@ -331,7 +331,7 @@ spec:
 			claim.Status.OutputsAvailable = true
 			claim.Status.Reason = conditions.ReasonSucceeded
 			claim.Status.Message = "Resource provisioned successfully"
-			claim.Status.Outputs = scorev1b1.ResourceClaimOutputs{
+			claim.Status.Outputs = &scorev1b1.ResourceClaimOutputs{
 				URI: stringPtr("postgresql://user:pass@localhost:5432/db"),
 			}
 			Expect(k8sClient.Status().Update(context.Background(), claim)).To(Succeed())
@@ -427,7 +427,7 @@ spec:
 				claim.Status.OutputsAvailable = true
 				claim.Status.Reason = conditions.ReasonSucceeded
 				claim.Status.Message = "Resource provisioned successfully"
-				claim.Status.Outputs = scorev1b1.ResourceClaimOutputs{
+				claim.Status.Outputs = &scorev1b1.ResourceClaimOutputs{
 					URI: stringPtr("postgresql://user:pass@localhost:5432/db"),
 				}
 				Expect(k8sCl.Status().Update(context.Background(), claim)).To(Succeed())
