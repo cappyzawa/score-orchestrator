@@ -8,6 +8,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	scorev1b1 "github.com/cappyzawa/score-orchestrator/api/v1b1"
+	"github.com/cappyzawa/score-orchestrator/internal/config"
 	"github.com/cappyzawa/score-orchestrator/internal/controller/managers"
 	"github.com/cappyzawa/score-orchestrator/internal/controller/phases"
 	"github.com/cappyzawa/score-orchestrator/internal/reconcile"
@@ -20,6 +21,7 @@ type WorkloadPipeline struct {
 	claimManager  *managers.ClaimManager
 	planManager   *managers.PlanManager
 	statusManager *managers.StatusManager
+	config        *config.ReconcilerConfig
 
 	// Phases for normal reconciliation
 	normalPhases []phases.Phase
@@ -34,6 +36,7 @@ func NewWorkloadPipeline(
 	claimManager *managers.ClaimManager,
 	planManager *managers.PlanManager,
 	statusManager *managers.StatusManager,
+	reconcilerConfig *config.ReconcilerConfig,
 ) *WorkloadPipeline {
 	return &WorkloadPipeline{
 		client:        k8sClient,
@@ -41,6 +44,7 @@ func NewWorkloadPipeline(
 		claimManager:  claimManager,
 		planManager:   planManager,
 		statusManager: statusManager,
+		config:        reconcilerConfig,
 		normalPhases: []phases.Phase{
 			&phases.ValidationPhase{},
 			&phases.ClaimPhase{},
@@ -58,13 +62,14 @@ func (p *WorkloadPipeline) Execute(ctx context.Context, workload *scorev1b1.Work
 
 	// Create phase context
 	phaseCtx := &phases.PhaseContext{
-		Client:        p.client,
-		Workload:      workload,
-		Logger:        log,
-		Recorder:      p.recorder,
-		ClaimManager:  p.claimManager,
-		PlanManager:   p.planManager,
-		StatusManager: p.statusManager,
+		Client:           p.client,
+		Workload:         workload,
+		Logger:           log,
+		Recorder:         p.recorder,
+		ReconcilerConfig: p.config,
+		ClaimManager:     p.claimManager,
+		PlanManager:      p.planManager,
+		StatusManager:    p.statusManager,
 	}
 
 	// Handle deletion vs normal reconciliation

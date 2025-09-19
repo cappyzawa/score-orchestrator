@@ -36,13 +36,14 @@ import (
 // WorkloadReconciler reconciles a Workload object
 type WorkloadReconciler struct {
 	client.Client
-	Scheme          *runtime.Scheme
-	Recorder        record.EventRecorder
-	ConfigLoader    config.ConfigLoader
-	EndpointDeriver *endpoint.EndpointDeriver
-	ClaimManager    *managers.ClaimManager
-	PlanManager     *managers.PlanManager
-	StatusManager   *managers.StatusManager
+	Scheme                 *runtime.Scheme
+	Recorder               record.EventRecorder
+	ConfigLoader           config.ConfigLoader
+	ReconcilerConfigLoader *config.ReconcilerConfigLoader
+	EndpointDeriver        *endpoint.EndpointDeriver
+	ClaimManager           *managers.ClaimManager
+	PlanManager            *managers.PlanManager
+	StatusManager          *managers.StatusManager
 
 	// Pipeline for phase-based reconciliation
 	Pipeline *reconciler.WorkloadPipeline
@@ -74,6 +75,15 @@ func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	log.V(1).Info("Processing Workload", "generation", workload.Generation, "resourceVersion", workload.ResourceVersion)
 
+	// Get current reconciler configuration
+	var reconcilerConfig *config.ReconcilerConfig
+	if r.ReconcilerConfigLoader != nil {
+		reconcilerConfig = r.ReconcilerConfigLoader.GetCachedConfig()
+	} else {
+		// Fallback to default configuration if loader is not available
+		reconcilerConfig = config.DefaultReconcilerConfig()
+	}
+
 	// Initialize pipeline if not already done
 	if r.Pipeline == nil {
 		r.Pipeline = reconciler.NewWorkloadPipeline(
@@ -82,6 +92,7 @@ func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			r.ClaimManager,
 			r.PlanManager,
 			r.StatusManager,
+			reconcilerConfig,
 		)
 	}
 
