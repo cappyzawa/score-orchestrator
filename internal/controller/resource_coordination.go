@@ -16,50 +16,8 @@ limitations under the License.
 
 package controller
 
-import (
-	"context"
-
-	ctrl "sigs.k8s.io/controller-runtime"
-
-	scorev1b1 "github.com/cappyzawa/score-orchestrator/api/v1b1"
-	"github.com/cappyzawa/score-orchestrator/internal/status"
-)
-
 // Resource coordination events
 const (
 	// EventReasonClaimError indicates an error in resource claiming
 	EventReasonClaimError = "ClaimError"
 )
-
-// handleResourceClaims creates/updates ResourceClaims and aggregates their statuses
-func (r *WorkloadReconciler) handleResourceClaims(ctx context.Context, workload *scorev1b1.Workload) ([]scorev1b1.ResourceClaim, status.ClaimAggregation, error) {
-	log := ctrl.LoggerFrom(ctx)
-
-	// Create/update ResourceClaims using ClaimManager
-	if err := r.ClaimManager.EnsureClaims(ctx, workload); err != nil {
-		log.Error(err, "Failed to ensure ResourceClaims")
-		r.Recorder.Eventf(workload, EventTypeWarning, EventReasonClaimError, "Failed to create resource claims: %v", err)
-		return nil, status.ClaimAggregation{}, err
-	}
-
-	log.V(1).Info("ResourceClaims ensured successfully")
-
-	// Get and aggregate claim statuses using ClaimManager
-	claims, err := r.ClaimManager.GetClaims(ctx, workload)
-	if err != nil {
-		log.Error(err, "Failed to get ResourceClaims")
-		return nil, status.ClaimAggregation{}, err
-	}
-
-	log.V(1).Info("Retrieved ResourceClaims", "count", len(claims))
-
-	agg := r.ClaimManager.AggregateStatus(claims)
-	status.UpdateWorkloadStatusFromAggregation(workload, agg)
-
-	return claims, agg, nil
-}
-
-// handleWorkloadPlan creates WorkloadPlan if bindings are ready
-func (r *WorkloadReconciler) handleWorkloadPlan(ctx context.Context, workload *scorev1b1.Workload, claims []scorev1b1.ResourceClaim, agg status.ClaimAggregation) error {
-	return r.PlanManager.EnsurePlan(ctx, workload, claims, agg)
-}

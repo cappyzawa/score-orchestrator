@@ -17,13 +17,7 @@ limitations under the License.
 package controller
 
 import (
-	"context"
 	"time"
-
-	ctrl "sigs.k8s.io/controller-runtime"
-
-	scorev1b1 "github.com/cappyzawa/score-orchestrator/api/v1b1"
-	"github.com/cappyzawa/score-orchestrator/internal/reconcile"
 )
 
 // Workload lifecycle management constants
@@ -37,33 +31,3 @@ const (
 	// EventReasonDeleted indicates successful workload deletion
 	EventReasonDeleted = "Deleted"
 )
-
-// handleDeletion handles Workload deletion with finalizer cleanup
-func (r *WorkloadReconciler) handleDeletion(ctx context.Context, workload *scorev1b1.Workload) (ctrl.Result, error) {
-	log := ctrl.LoggerFrom(ctx)
-
-	if !reconcile.HasFinalizer(workload) {
-		return ctrl.Result{}, nil
-	}
-
-	// Wait for ResourceClaims to be cleaned up by their owners (Provisioners)
-	claims, err := r.ClaimManager.GetClaims(ctx, workload)
-	if err != nil {
-		log.Error(err, "Failed to get ResourceClaims during deletion")
-		return ctrl.Result{}, err
-	}
-
-	if len(claims) > 0 {
-		log.V(1).Info("Waiting for ResourceClaims to be cleaned up", "count", len(claims))
-		return ctrl.Result{RequeueAfter: DefaultRequeueDelay}, nil
-	}
-
-	// Remove finalizer
-	if err := reconcile.RemoveFinalizer(ctx, r.Client, workload); err != nil {
-		log.Error(err, "Failed to remove finalizer")
-		return ctrl.Result{}, err
-	}
-
-	r.Recorder.Event(workload, EventTypeNormal, EventReasonDeleted, "Workload cleanup completed")
-	return ctrl.Result{}, nil
-}

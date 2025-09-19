@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
@@ -26,7 +27,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	scorev1b1 "github.com/cappyzawa/score-orchestrator/api/v1b1"
-	"github.com/cappyzawa/score-orchestrator/internal/conditions"
 )
 
 // Event types for Kubernetes events
@@ -104,37 +104,13 @@ func HandleReconcileError(ctx context.Context, recorder record.EventRecorder, wo
 		// Status update conflicts should requeue
 		if apierrors.IsConflict(err.Cause) {
 			log.V(1).Info("Resource version conflict, requeuing", "error", err.Cause)
-			return ctrl.Result{RequeueAfter: ConflictRequeueDelay}, nil
+			return ctrl.Result{RequeueAfter: 1 * time.Second}, nil
 		}
 	case ErrorCategoryConfig, ErrorCategoryRuntime:
 		// Configuration and runtime errors might be transient
-		return ctrl.Result{RequeueAfter: DefaultRequeueDelay}, nil
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
 	// Default: return the error to trigger exponential backoff
 	return ctrl.Result{}, err
-}
-
-// validateInputsAndPolicy validates workload inputs and applies platform policy
-func (r *WorkloadReconciler) validateInputsAndPolicy(_ context.Context, workload *scorev1b1.Workload) (bool, string, string) {
-	// For MVP: basic validation (CRD-level validation handles most cases)
-	// Resources are optional - workloads can be stateless without dependencies
-
-	// ADR-0003: Policy validation is now handled via Orchestrator Config + Admission
-	// For MVP, basic spec validation is sufficient
-	return true, conditions.ReasonSucceeded, "Workload specification is valid"
-}
-
-// updateStatusAndReturn updates the Workload status and returns the result
-func (r *WorkloadReconciler) updateStatusAndReturn(ctx context.Context, workload *scorev1b1.Workload) (ctrl.Result, error) {
-	if err := r.StatusManager.UpdateStatus(ctx, workload); err != nil {
-		if apierrors.IsConflict(err) {
-			// Resource version conflict - requeue for retry
-			ctrl.LoggerFrom(ctx).V(1).Info("Resource version conflict, requeuing", "error", err)
-			return ctrl.Result{RequeueAfter: ConflictRequeueDelay}, nil
-		}
-		ctrl.LoggerFrom(ctx).Error(err, "Failed to update Workload status")
-		return ctrl.Result{}, err
-	}
-	return ctrl.Result{}, nil
 }
