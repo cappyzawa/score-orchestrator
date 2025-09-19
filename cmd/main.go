@@ -40,7 +40,6 @@ import (
 	"github.com/cappyzawa/score-orchestrator/internal/config"
 	"github.com/cappyzawa/score-orchestrator/internal/controller"
 	"github.com/cappyzawa/score-orchestrator/internal/controller/managers"
-	"github.com/cappyzawa/score-orchestrator/internal/controller/provisioner"
 	"github.com/cappyzawa/score-orchestrator/internal/endpoint"
 	// +kubebuilder:scaffold:imports
 )
@@ -242,16 +241,6 @@ func main() {
 		StatusManager:   statusManager,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Workload")
-		os.Exit(1)
-	}
-
-	if err := (&provisioner.ProvisionerReconciler{
-		Client:       mgr.GetClient(),
-		Scheme:       mgr.GetScheme(),
-		Recorder:     mgr.GetEventRecorderFor("provisioner-controller"),
-		ConfigLoader: configLoader,
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Provisioner")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder

@@ -154,7 +154,7 @@ func (pm *PlanManager) SelectBackend(ctx context.Context, workload *scorev1b1.Wo
 	log := ctrl.LoggerFrom(ctx)
 
 	// Load Orchestrator Configuration
-	orchestratorConfig, err := pm.configLoader.Load(ctx)
+	orchestratorConfig, err := pm.configLoader.LoadConfig(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load orchestrator config: %w", err)
 	}

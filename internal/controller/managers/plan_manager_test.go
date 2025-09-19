@@ -43,7 +43,7 @@ type mockConfigLoader struct {
 	closeFunc      func() error
 }
 
-func (m *mockConfigLoader) Load(ctx context.Context) (*scorev1b1.OrchestratorConfig, error) {
+func (m *mockConfigLoader) LoadConfig(ctx context.Context) (*scorev1b1.OrchestratorConfig, error) {
 	if m.loadConfigFunc != nil {
 		return m.loadConfigFunc(ctx)
 	}

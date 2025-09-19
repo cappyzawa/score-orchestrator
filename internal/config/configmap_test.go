@@ -73,7 +73,7 @@ spec:
 `
 )
 
-func TestConfigMapLoader_Load(t *testing.T) {
+func TestConfigMapLoader_LoadConfig(t *testing.T) {
 	tests := []struct {
 		name        string
 		setupClient func() *fake.Clientset
@@ -133,7 +133,7 @@ func TestConfigMapLoader_Load(t *testing.T) {
 			},
 			options: DefaultLoaderOptions(),
 			wantErr: true,
-			errType: ErrConfigNotFound,
+			errType: ErrConfigMalformed,
 		},
 		{
 			name: "invalid YAML content",
@@ -216,32 +216,32 @@ func TestConfigMapLoader_Load(t *testing.T) {
 			client := tt.setupClient()
 			loader := NewConfigMapLoader(client, tt.options)
 
-			config, err := loader.Load(context.Background())
+			config, err := loader.LoadConfig(context.Background())
 
 			if tt.wantErr {
 				if err == nil {
-					t.Errorf("ConfigMapLoader.Load() expected error but got none")
+					t.Errorf("ConfigMapLoader.LoadConfig() expected error but got none")
 					return
 				}
 				if tt.errType != nil {
 					if !isErrorType(err, tt.errType) {
-						t.Errorf("ConfigMapLoader.Load() error type = %T, want %T", err, tt.errType)
+						t.Errorf("ConfigMapLoader.LoadConfig() error type = %T, want %T", err, tt.errType)
 					}
 				}
 			} else {
 				if err != nil {
-					t.Errorf("ConfigMapLoader.Load() error = %v, wantErr %v", err, tt.wantErr)
+					t.Errorf("ConfigMapLoader.LoadConfig() error = %v, wantErr %v", err, tt.wantErr)
 					return
 				}
 				if config == nil {
-					t.Errorf("ConfigMapLoader.Load() returned nil config")
+					t.Errorf("ConfigMapLoader.LoadConfig() returned nil config")
 					return
 				}
 				if config.APIVersion != "score.dev/v1b1" {
-					t.Errorf("ConfigMapLoader.Load() APIVersion = %v, want %v", config.APIVersion, "score.dev/v1b1")
+					t.Errorf("ConfigMapLoader.LoadConfig() APIVersion = %v, want %v", config.APIVersion, "score.dev/v1b1")
 				}
 				if config.Kind != "OrchestratorConfig" {
-					t.Errorf("ConfigMapLoader.Load() Kind = %v, want %v", config.Kind, "OrchestratorConfig")
+					t.Errorf("ConfigMapLoader.LoadConfig() Kind = %v, want %v", config.Kind, "OrchestratorConfig")
 				}
 			}
 
@@ -253,7 +253,7 @@ func TestConfigMapLoader_Load(t *testing.T) {
 	}
 }
 
-func TestConfigMapLoader_LoadWithCache(t *testing.T) {
+func TestConfigMapLoader_LoadConfigWithCache(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	configMap := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
@@ -283,15 +283,15 @@ func TestConfigMapLoader_LoadWithCache(t *testing.T) {
 	ctx := context.Background()
 
 	// First load should hit the ConfigMap
-	config1, err := loader.Load(ctx)
+	config1, err := loader.LoadConfig(ctx)
 	if err != nil {
-		t.Fatalf("First Load() failed: %v", err)
+		t.Fatalf("First LoadConfig() failed: %v", err)
 	}
 
 	// Second load should hit the cache (no additional API call)
-	config2, err := loader.Load(ctx)
+	config2, err := loader.LoadConfig(ctx)
 	if err != nil {
-		t.Fatalf("Second Load() failed: %v", err)
+		t.Fatalf("Second LoadConfig() failed: %v", err)
 	}
 
 	// Verify both configs are equivalent
@@ -303,9 +303,9 @@ func TestConfigMapLoader_LoadWithCache(t *testing.T) {
 	time.Sleep(2 * time.Second)
 
 	// Third load should hit the ConfigMap again after cache expiry
-	config3, err := loader.Load(ctx)
+	config3, err := loader.LoadConfig(ctx)
 	if err != nil {
-		t.Fatalf("Third Load() failed: %v", err)
+		t.Fatalf("Third LoadConfig() failed: %v", err)
 	}
 
 	if config3.Metadata.Name != config1.Metadata.Name {

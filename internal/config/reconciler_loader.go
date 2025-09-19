@@ -54,9 +54,9 @@ func NewReconcilerConfigLoader(client kubernetes.Interface, opts ReconcilerLoade
 	}
 }
 
-// Load loads ReconcilerConfig from ConfigMap
-func (r *ReconcilerConfigLoader) Load(ctx context.Context) (*ReconcilerConfig, error) {
-	orchestratorConfig, err := r.configMapLoader.Load(ctx)
+// LoadConfig loads ReconcilerConfig from ConfigMap
+func (r *ReconcilerConfigLoader) LoadConfig(ctx context.Context) (*ReconcilerConfig, error) {
+	orchestratorConfig, err := r.configMapLoader.LoadConfig(ctx)
 	if err != nil {
 		// If ConfigMap is not found, return default configuration
 		if errors.Is(err, ErrConfigNotFound) {

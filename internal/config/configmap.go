@@ -28,7 +28,6 @@ import (
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/yaml"
 
 	scorev1b1 "github.com/cappyzawa/score-orchestrator/api/v1b1"
@@ -77,53 +76,51 @@ func NewConfigMapLoader(client kubernetes.Interface, options LoaderOptions) *Con
 	return loader
 }
 
-// Load loads the orchestrator configuration from the ConfigMap
-func (l *ConfigMapLoader) Load(ctx context.Context) (*scorev1b1.OrchestratorConfig, error) {
-	logger := log.FromContext(ctx)
-
+// LoadConfig loads the orchestrator configuration from the ConfigMap
+func (l *ConfigMapLoader) LoadConfig(ctx context.Context) (*scorev1b1.OrchestratorConfig, error) {
 	// Check cache first if enabled
-	if l.options.EnableCache && l.cache != nil {
-		if cachedConfig := l.cache.get(); cachedConfig != nil {
-			logger.V(1).Info("Using cached configuration")
-			return cachedConfig, nil
+	if l.cache != nil {
+		if config := l.cache.get(); config != nil {
+			return config, nil
 		}
 	}
 
-	configMap, err := l.client.CoreV1().ConfigMaps(l.options.Namespace).Get(ctx, l.options.ConfigMapName, metav1.GetOptions{})
+	// Load from ConfigMap
+	configMap, err := l.client.CoreV1().ConfigMaps(l.options.Namespace).Get(
+		ctx,
+		l.options.ConfigMapName,
+		metav1.GetOptions{},
+	)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, fmt.Errorf("%w: ConfigMap %s/%s not found",
-				ErrConfigNotFound, l.options.Namespace, l.options.ConfigMapName)
+			return nil, fmt.Errorf("%w: ConfigMap %s/%s not found", ErrConfigNotFound, l.options.Namespace, l.options.ConfigMapName)
 		}
-		return nil, fmt.Errorf("failed to get ConfigMap: %w", err)
+		return nil, fmt.Errorf("failed to get ConfigMap %s/%s: %w", l.options.Namespace, l.options.ConfigMapName, err)
 	}
 
-	data, exists := configMap.Data[l.options.ConfigMapKey]
+	// Extract YAML content
+	yamlContent, exists := configMap.Data[l.options.ConfigMapKey]
 	if !exists {
-		return nil, fmt.Errorf("%w: key %s not found in ConfigMap %s/%s",
-			ErrConfigNotFound, l.options.ConfigMapKey, l.options.Namespace, l.options.ConfigMapName)
+		return nil, fmt.Errorf("%w: key %s not found in ConfigMap %s/%s", ErrConfigMalformed, l.options.ConfigMapKey, l.options.Namespace, l.options.ConfigMapName)
 	}
 
-	var config scorev1b1.OrchestratorConfig
-	if err := yaml.Unmarshal([]byte(data), &config); err != nil {
-		return nil, fmt.Errorf("%w: failed to parse YAML: %v", ErrConfigMalformed, err)
+	// Parse YAML
+	config, err := l.parseConfig(yamlContent)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrConfigMalformed, err)
 	}
 
 	// Validate configuration
-	if err := l.validator.Validate(&config); err != nil {
+	if err := l.validator.Validate(config); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrConfigInvalid, err)
 	}
 
-	// Cache the config if caching is enabled
-	if l.options.EnableCache && l.cache != nil {
-		l.cache.set(&config)
+	// Cache the configuration if caching is enabled
+	if l.cache != nil {
+		l.cache.set(config)
 	}
 
-	logger.Info("Successfully loaded orchestrator configuration",
-		"configMap", fmt.Sprintf("%s/%s", l.options.Namespace, l.options.ConfigMapName),
-		"key", l.options.ConfigMapKey)
-
-	return &config, nil
+	return config, nil
 }
 
 // Watch returns a channel that receives configuration updates
