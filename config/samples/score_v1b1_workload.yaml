@@ -1,21 +1,24 @@
-# Test Case 1: Auto-derivation - web service (has service ports)
-# Per ADR-0004: No environment labels needed - cluster represents one environment
+# Score.dev spec compliant example - web service with database
+# This demonstrates the core Score.dev use case: application with dependencies
 apiVersion: score.dev/v1b1
 kind: Workload
 metadata:
   labels:
     app.kubernetes.io/name: kbinit
     app.kubernetes.io/managed-by: kustomize
-    team: backend  # Organizational label, not used for backend selection
-  name: workload-sample
-  namespace: score-system
+  name: service-a
+  namespace: default
 spec:
-  containers:
-    app:
-      image: nginx:latest
   service:
     ports:
-    - port: 8080
+      - port: 8000
+        targetPort: 80
+        protocol: TCP
+  containers:
+    container-id:
+      image: busybox
+      variables:
+        CONNECTION_STRING: "postgresql://${resources.db.username}:${resources.db.password}@${resources.db.host}:${resources.db.port}"
   resources:
     db:
       type: postgres

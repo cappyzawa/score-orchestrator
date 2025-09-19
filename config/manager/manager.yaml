@@ -63,8 +63,13 @@ spec:
         args:
           - --leader-elect
           - --health-probe-bind-address=:8081
+          - --metrics-bind-address=:8443
         image: controller:latest
+        imagePullPolicy: IfNotPresent
         name: manager
+        env:
+        - name: SUPPORTED_RESOURCE_TYPES
+          value: "postgresql,redis,mysql,mongodb,s3,rabbitmq"
         ports: []
         securityContext:
           readOnlyRootFilesystem: true

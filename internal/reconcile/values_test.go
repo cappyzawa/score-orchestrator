@@ -70,7 +70,7 @@ func TestComposeValues(t *testing.T) {
 					},
 					Status: scorev1b1.ResourceClaimStatus{
 						OutputsAvailable: true,
-						Outputs: scorev1b1.ResourceClaimOutputs{
+						Outputs: &scorev1b1.ResourceClaimOutputs{
 							URI: ptr.To("postgres://localhost:5432/testdb"),
 						},
 					},
@@ -177,7 +177,7 @@ func TestComposeValues(t *testing.T) {
 					},
 					Status: scorev1b1.ResourceClaimStatus{
 						OutputsAvailable: true,
-						Outputs: scorev1b1.ResourceClaimOutputs{
+						Outputs: &scorev1b1.ResourceClaimOutputs{
 							URI: ptr.To("postgres://prod:5432/mydb"),
 						},
 					},
@@ -223,7 +223,7 @@ func TestComposeValues(t *testing.T) {
 					},
 					Status: scorev1b1.ResourceClaimStatus{
 						OutputsAvailable: true,
-						Outputs: scorev1b1.ResourceClaimOutputs{
+						Outputs: &scorev1b1.ResourceClaimOutputs{
 							URI: ptr.To("postgres://localhost/db"),
 						},
 					},
@@ -575,7 +575,7 @@ func TestExtractOutputs(t *testing.T) {
 					},
 					Status: scorev1b1.ResourceClaimStatus{
 						OutputsAvailable: true,
-						Outputs: scorev1b1.ResourceClaimOutputs{
+						Outputs: &scorev1b1.ResourceClaimOutputs{
 							URI: ptr.To("postgres://localhost:5432/db"),
 							SecretRef: &scorev1b1.LocalObjectReference{
 								Name: "db-secret",
@@ -589,7 +589,7 @@ func TestExtractOutputs(t *testing.T) {
 					},
 					Status: scorev1b1.ResourceClaimStatus{
 						OutputsAvailable: true,
-						Outputs: scorev1b1.ResourceClaimOutputs{
+						Outputs: &scorev1b1.ResourceClaimOutputs{
 							URI: ptr.To("redis://localhost:6379"),
 						},
 					},
