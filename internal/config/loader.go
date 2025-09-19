@@ -36,8 +36,8 @@ var (
 
 // ConfigLoader defines the interface for loading and watching Orchestrator Configuration
 type ConfigLoader interface {
-	// LoadConfig loads the orchestrator configuration from the configured source
-	LoadConfig(ctx context.Context) (*scorev1b1.OrchestratorConfig, error)
+	// Load loads the orchestrator configuration from the configured source
+	Load(ctx context.Context) (*scorev1b1.OrchestratorConfig, error)
 
 	// Watch returns a channel that receives configuration updates when changes occur
 	// The channel is closed when the context is cancelled or an error occurs

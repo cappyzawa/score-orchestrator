@@ -38,10 +38,10 @@ var _ = Describe("ReconcilerConfigLoader", func() {
 		}
 	})
 
-	Describe("LoadConfig", func() {
+	Describe("Load", func() {
 		Context("when ConfigMap does not exist", func() {
 			It("should return default configuration", func() {
-				config, err := loader.LoadConfig(ctx)
+				config, err := loader.Load(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(config).ToNot(BeNil())
 
@@ -102,7 +102,7 @@ reconciler:
 			})
 
 			It("should load and parse the reconciler configuration", func() {
-				config, err := loader.LoadConfig(ctx)
+				config, err := loader.Load(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(config).ToNot(BeNil())
 
@@ -158,7 +158,7 @@ spec:
 			})
 
 			It("should return default configuration", func() {
-				config, err := loader.LoadConfig(ctx)
+				config, err := loader.Load(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(config).ToNot(BeNil())
 
@@ -210,7 +210,7 @@ reconciler:
 			})
 
 			It("should merge with defaults for missing values", func() {
-				config, err := loader.LoadConfig(ctx)
+				config, err := loader.Load(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(config).ToNot(BeNil())
 
@@ -274,7 +274,7 @@ reconciler:
 			Expect(err).ToNot(HaveOccurred())
 
 			// Load config
-			_, err = loader.LoadConfig(ctx)
+			_, err = loader.Load(ctx)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Get cached config
