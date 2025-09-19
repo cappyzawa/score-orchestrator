@@ -138,12 +138,17 @@ template:
 
 ### ProvisionerSpec
 
-Defines how dependency resources (from `Workload.spec.resources`) are provisioned.
+Defines how dependency resources (from `Workload.spec.resources`) are provisioned. The Score Orchestrator uses a **Unified Provisioner Controller** that handles all resource types through declarative configuration.
 
 ```yaml
 provisioners:
 - type: string                   # Resource type (e.g., "postgres", "redis", "s3")
-  provisioner: string            # Controller name/identifier
+  config:                        # Provisioning configuration
+    strategy: string             # "helm" | "manifests" | "external-api"
+    helm: object                 # Helm-specific configuration (if strategy=helm)
+    manifests: []                # Kubernetes manifests array (if strategy=manifests)
+    externalApi: object          # External API configuration (if strategy=external-api)
+    outputs: object              # Output mapping configuration
   classes: []                    # Array of ClassSpec
   defaults:                      # Default parameters
     class: string
@@ -169,12 +174,148 @@ classes:
     features: []                 # Required features
 ```
 
-### Example Provisioner Configuration
+### Provisioning Strategies
+
+#### Helm Strategy
+Deploys resources using Helm charts with parameterized values.
+
+```yaml
+- type: postgres
+  config:
+    strategy: helm
+    helm:
+      chart: bitnami/postgresql
+      repository: https://charts.bitnami.com/bitnami
+      version: "12.8.2"
+      values:
+        auth:
+          postgresPassword: "{{.secret.password}}"
+        primary:
+          resources:
+            requests:
+              cpu: "{{.class.cpu}}"
+              memory: "{{.class.memory}}"
+            limits:
+              cpu: "{{.class.cpu}}"
+              memory: "{{.class.memory}}"
+          persistence:
+            size: "{{.class.storage}}"
+    outputs:
+      uri: "postgresql://postgres:{{.secret.password}}@{{.service.name}}:5432/postgres"
+      secretRef: "{{.secret.name}}"
+```
+
+#### Manifests Strategy
+Applies Kubernetes manifests with template substitution.
+
+```yaml
+- type: redis
+  config:
+    strategy: manifests
+    manifests:
+      - apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: "{{.claimName}}-redis"
+          namespace: "{{.namespace}}"
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: "{{.claimName}}-redis"
+          template:
+            metadata:
+              labels:
+                app: "{{.claimName}}-redis"
+            spec:
+              containers:
+              - name: redis
+                image: redis:7-alpine
+                resources:
+                  requests:
+                    cpu: "{{.class.cpu}}"
+                    memory: "{{.class.memory}}"
+                ports:
+                - containerPort: 6379
+      - apiVersion: v1
+        kind: Service
+        metadata:
+          name: "{{.claimName}}-redis"
+          namespace: "{{.namespace}}"
+        spec:
+          selector:
+            app: "{{.claimName}}-redis"
+          ports:
+          - port: 6379
+            targetPort: 6379
+    outputs:
+      uri: "redis://{{.service.name}}:6379"
+```
+
+#### External API Strategy
+Calls external APIs for cloud resource provisioning.
+
+```yaml
+- type: rds-postgres
+  config:
+    strategy: external-api
+    externalApi:
+      endpoint: "https://rds.us-east-1.amazonaws.com/"
+      method: POST
+      path: "/2014-10-31/CreateDBInstance"
+      auth:
+        type: aws-iam
+        roleArn: "arn:aws:iam::123456789012:role/ScoreProvisionerRole"
+      request:
+        DBInstanceIdentifier: "{{.claimName}}"
+        DBInstanceClass: "{{.class.instanceClass}}"
+        Engine: "postgres"
+        MasterUsername: "postgres"
+        MasterUserPassword: "{{.secret.password}}"
+        AllocatedStorage: "{{.class.storage}}"
+      polling:
+        statusField: "DBInstanceStatus"
+        readyValue: "available"
+        interval: "30s"
+        timeout: "20m"
+    outputs:
+      uri: "postgresql://postgres:{{.secret.password}}@{{.response.Endpoint.Address}}:{{.response.Endpoint.Port}}/postgres"
+```
+
+### Template Variables
+
+The provisioner controller provides these template variables for all strategies:
+
+- `{{.claimName}}`: ResourceClaim name
+- `{{.claimKey}}`: Resource key from Workload spec
+- `{{.namespace}}`: Target namespace
+- `{{.class.*}}`: Class-specific parameters (cpu, memory, storage, etc.)
+- `{{.params.*}}`: Custom parameters from ResourceClaim
+- `{{.secret.*}}`: Generated secrets (password, apiKey, etc.)
+- `{{.service.*}}`: Generated service information
+- `{{.response.*}}`: API response data (external-api strategy only)
+
+### Example Complete Configuration
 
 ```yaml
 provisioners:
 - type: postgres
-  provisioner: postgres-operator
+  config:
+    strategy: helm
+    helm:
+      chart: bitnami/postgresql
+      repository: https://charts.bitnami.com/bitnami
+      values:
+        auth:
+          postgresPassword: "{{.secret.password}}"
+        primary:
+          resources:
+            requests:
+              cpu: "{{.class.cpu}}"
+              memory: "{{.class.memory}}"
+    outputs:
+      uri: "postgresql://postgres:{{.secret.password}}@{{.service.name}}:5432/postgres"
+      secretRef: "{{.secret.name}}"
   classes:
   - name: small
     description: "Small database instance"
@@ -182,34 +323,31 @@ provisioners:
       cpu: "500m"
       memory: "1Gi"
       storage: "10Gi"
-      replicas: 1
-      backup: false
   - name: large
-    description: "Large database instance with HA"
+    description: "Large database instance"
     parameters:
       cpu: "2000m"
       memory: "8Gi"
       storage: "100Gi"
-      replicas: 3
-      backup: true
+  defaults:
+    class: small
 
 - type: redis
-  provisioner: redis-operator
-  defaults:
-    class: standard
-    params:
-      maxMemory: "1Gi"
-      persistence: true
+  config:
+    strategy: manifests
+    manifests:
+      - apiVersion: apps/v1
+        kind: Deployment
+        # ... (see manifests example above)
+    outputs:
+      uri: "redis://{{.service.name}}:6379"
   classes:
   - name: standard
     parameters:
-      memory: "1Gi"
-      persistence: true
-  - name: large
-    parameters:
-      memory: "8Gi"
-      persistence: true
-      cluster: true
+      cpu: "100m"
+      memory: "128Mi"
+  defaults:
+    class: standard
 ```
 
 ---
@@ -389,7 +527,22 @@ data:
 
       provisioners:
       - type: postgres
-        provisioner: postgres-operator
+        config:
+          strategy: helm
+          helm:
+            chart: bitnami/postgresql
+            repository: https://charts.bitnami.com/bitnami
+            values:
+              auth:
+                postgresPassword: "{{.secret.password}}"
+              primary:
+                resources:
+                  requests:
+                    cpu: "{{.class.cpu}}"
+                    memory: "{{.class.memory}}"
+          outputs:
+            uri: "postgresql://postgres:{{.secret.password}}@{{.service.name}}:5432/postgres"
+            secretRef: "{{.secret.name}}"
         defaults:
           class: small
         classes:
