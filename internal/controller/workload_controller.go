@@ -18,7 +18,6 @@ package controller
 
 import (
 	"context"
-	"strings"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -30,8 +29,8 @@ import (
 	scorev1b1 "github.com/cappyzawa/score-orchestrator/api/v1b1"
 	"github.com/cappyzawa/score-orchestrator/internal/config"
 	"github.com/cappyzawa/score-orchestrator/internal/controller/managers"
+	"github.com/cappyzawa/score-orchestrator/internal/controller/reconciler"
 	"github.com/cappyzawa/score-orchestrator/internal/endpoint"
-	"github.com/cappyzawa/score-orchestrator/internal/reconcile"
 )
 
 // WorkloadReconciler reconciles a Workload object
@@ -44,6 +43,9 @@ type WorkloadReconciler struct {
 	ClaimManager    *managers.ClaimManager
 	PlanManager     *managers.PlanManager
 	StatusManager   *managers.StatusManager
+
+	// Pipeline for phase-based reconciliation
+	Pipeline *reconciler.WorkloadPipeline
 }
 
 // +kubebuilder:rbac:groups=score.dev,resources=workloads,verbs=get;list;watch;update;patch
@@ -72,51 +74,19 @@ func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	log.V(1).Info("Processing Workload", "generation", workload.Generation, "resourceVersion", workload.ResourceVersion)
 
-	// Handle deletion
-	if !workload.DeletionTimestamp.IsZero() {
-		return r.handleDeletion(ctx, workload)
+	// Initialize pipeline if not already done
+	if r.Pipeline == nil {
+		r.Pipeline = reconciler.NewWorkloadPipeline(
+			r.Client,
+			r.Recorder,
+			r.ClaimManager,
+			r.PlanManager,
+			r.StatusManager,
+		)
 	}
 
-	// Ensure finalizer
-	if err := reconcile.EnsureFinalizer(ctx, r.Client, workload); err != nil {
-		log.Error(err, "Failed to ensure finalizer")
-		return ctrl.Result{}, err
-	}
-
-	// Validate inputs and apply policy
-	inputsValid, reason, message := r.validateInputsAndPolicy(ctx, workload)
-	r.StatusManager.SetInputsValidCondition(workload, inputsValid, reason, message)
-
-	if !inputsValid {
-		log.V(1).Info("Inputs validation failed", "reason", reason, "message", message)
-		return r.updateStatusAndReturn(ctx, workload)
-	}
-
-	log.V(1).Info("Inputs validated successfully, proceeding to resource claims")
-
-	// Handle ResourceClaims
-	claims, agg, err := r.handleResourceClaims(ctx, workload)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-
-	// Handle WorkloadPlan
-	if err := r.handleWorkloadPlan(ctx, workload, claims, agg); err != nil {
-		// Check if this is a status-only error that should trigger immediate return
-		if strings.Contains(err.Error(), "missing required outputs for projection") {
-			return r.updateStatusAndReturn(ctx, workload)
-		}
-		return ctrl.Result{}, err
-	}
-
-	// Compute final status using StatusManager
-	plan, _ := r.PlanManager.GetPlan(ctx, workload) // Ignore error - nil plan is handled
-	if err := r.StatusManager.ComputeFinalStatus(ctx, workload, plan); err != nil {
-		log.Error(err, "Failed to compute final status")
-		return ctrl.Result{}, err
-	}
-
-	return r.updateStatusAndReturn(ctx, workload)
+	// Execute the pipeline
+	return r.Pipeline.Execute(ctx, workload)
 }
 
 // SetupWithManager sets up the controller with the Manager.

@@ -16,16 +16,6 @@ limitations under the License.
 
 package controller
 
-import (
-	"time"
-)
-
-// Runtime management constants
-const (
-	// ConflictRequeueDelay is the delay for requeuing on resource version conflicts
-	ConflictRequeueDelay = 1 * time.Second
-)
-
 // Runtime management events
 const (
 	// EventReasonProjectionError indicates an error in workload projection
