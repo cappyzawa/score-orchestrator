@@ -98,23 +98,77 @@ The generic provisioner provides these template variables:
 
 ## Implementation Plan
 
-### Phase 1: Core Provisioner Controller
-- [ ] Implement unified provisioner controller
-- [ ] Support Helm strategy
-- [ ] Support manifests strategy
-- [ ] Template engine for variable substitution
-- [ ] Basic output generation (URI, secretRef)
+### Phase 1: Core Provisioner Controller Infrastructure
+Focus on implementing the fundamental Provisioner Controller that can watch and manage ResourceClaim lifecycle according to the control plane specifications.
 
-### Phase 2: Enhanced Features
-- [ ] External API strategy
-- [ ] Advanced templating functions
-- [ ] Conditional logic in templates
-- [ ] Multi-resource provisioning
+#### Phase 1.1: Controller Foundation
+- [ ] Implement basic Provisioner Controller structure
+  - [ ] Watch ResourceClaim resources filtered by supported types
+  - [ ] Implement controller-runtime based reconciler
+  - [ ] Set up proper RBAC for ResourceClaim read/write access
+  - [ ] Add finalizer management for proper cleanup
 
-### Phase 3: Advanced Capabilities
-- [ ] Built-in common provisioning patterns (PostgreSQL, Redis, etc.)
-- [ ] Custom validation for provisioning configs
-- [ ] Performance optimizations and caching
+#### Phase 1.2: ResourceClaim Status Management
+- [ ] Implement ResourceClaim status updates according to spec
+  - [ ] Support phase transitions: `Pending → Claiming → (Bound | Failed)`
+  - [ ] Update `reason` and `message` with abstract vocabulary
+  - [ ] Implement `outputsAvailable` boolean gate
+  - [ ] Track `observedGeneration` and `lastTransitionTime`
+
+#### Phase 1.3: Basic Provisioning Strategy Framework
+- [ ] Define provisioning strategy interface
+  - [ ] Abstract strategy interface for different provisioning methods
+  - [ ] Configuration loading from Orchestrator Config
+  - [ ] Strategy selection based on ResourceClaim type
+  - [ ] Error handling and retry mechanisms
+
+#### Phase 1.4: Minimal Output Generation
+- [ ] Implement standardized output format according to spec
+  - [ ] Support `secretRef` outputs (reference to generated Secrets)
+  - [ ] Support `configMapRef` outputs (reference to generated ConfigMaps)
+  - [ ] Support `uri` outputs (connection strings, endpoints)
+  - [ ] Ensure CEL validation constraint compliance (at least one output field)
+
+#### Phase 1.5: Integration Testing
+- [ ] Test ResourceClaim lifecycle management
+- [ ] Verify status updates and phase transitions
+- [ ] Test finalizer behavior and cleanup
+- [ ] Validate output format compliance
+- [ ] Integration with Orchestrator's ResourceClaim creation
+
+### Phase 2: Concrete Provisioning Strategies
+After Phase 1 establishes the controller foundation, implement specific provisioning methods.
+
+#### Phase 2.1: Secret-based Strategy
+- [ ] Implement simple Secret generation strategy
+- [ ] Template-based Secret creation with variable substitution
+- [ ] Support for passwords, tokens, and credentials
+
+#### Phase 2.2: ConfigMap-based Strategy
+- [ ] Implement ConfigMap generation strategy
+- [ ] Support for configuration files and non-sensitive data
+
+#### Phase 2.3: Ephemeral Strategy
+- [ ] Implement in-memory/ephemeral resource strategy
+- [ ] Useful for testing and development scenarios
+
+### Phase 3: Advanced Provisioning Strategies
+Implement more sophisticated provisioning methods after core functionality is stable.
+
+#### Phase 3.1: Helm Strategy
+- [ ] Helm chart deployment strategy
+- [ ] Template variable substitution for Helm values
+- [ ] Chart repository management
+
+#### Phase 3.2: Manifest Strategy
+- [ ] Kubernetes manifest application strategy
+- [ ] Template engine for manifest customization
+- [ ] Multi-resource manifest handling
+
+#### Phase 3.3: External API Strategy
+- [ ] External service API integration
+- [ ] Authentication and credential management
+- [ ] Response mapping to ResourceClaim outputs
 
 ## Consequences
 
