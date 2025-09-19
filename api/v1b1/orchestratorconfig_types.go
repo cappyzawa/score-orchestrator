@@ -126,14 +126,98 @@ type ProvisionerSpec struct {
 	// Type is the resource type (e.g., "postgres", "redis", "s3")
 	Type string `json:"type" yaml:"type"`
 
-	// Provisioner is the controller name/identifier
-	Provisioner string `json:"provisioner" yaml:"provisioner"`
+	// Provisioner is the controller name/identifier (deprecated, use Config instead)
+	Provisioner string `json:"provisioner,omitempty" yaml:"provisioner,omitempty"`
+
+	// Config defines configuration-driven provisioning settings
+	Config *ProvisionerConfig `json:"config,omitempty" yaml:"config,omitempty"`
 
 	// Classes are available service tiers/sizes for this resource type
 	Classes []ClassSpec `json:"classes" yaml:"classes"`
 
 	// Defaults are default parameters for this provisioner
 	Defaults *ProvisionerDefaults `json:"defaults,omitempty" yaml:"defaults,omitempty"`
+}
+
+// ProvisionerConfig defines configuration-driven provisioning settings
+type ProvisionerConfig struct {
+	// Strategy defines the provisioning strategy: "helm" | "manifests" | "external-api"
+	Strategy string `json:"strategy" yaml:"strategy"`
+
+	// Helm defines Helm chart deployment configuration (used when strategy=helm)
+	Helm *HelmStrategy `json:"helm,omitempty" yaml:"helm,omitempty"`
+
+	// Manifests defines Kubernetes manifest application (used when strategy=manifests)
+	Manifests []runtime.RawExtension `json:"manifests,omitempty" yaml:"manifests,omitempty"`
+
+	// ExternalApi defines external API provisioning configuration (used when strategy=external-api)
+	ExternalApi *ExternalApiStrategy `json:"externalApi,omitempty" yaml:"externalApi,omitempty"`
+
+	// Outputs defines how to generate ResourceClaim outputs
+	Outputs map[string]string `json:"outputs,omitempty" yaml:"outputs,omitempty"`
+}
+
+// HelmStrategy defines Helm chart deployment configuration
+type HelmStrategy struct {
+	// Chart is the Helm chart name (e.g., "bitnami/postgresql")
+	Chart string `json:"chart" yaml:"chart"`
+
+	// Repository is the Helm chart repository URL
+	Repository string `json:"repository,omitempty" yaml:"repository,omitempty"`
+
+	// Version is the chart version to use
+	Version string `json:"version,omitempty" yaml:"version,omitempty"`
+
+	// Values are chart values with template substitution support
+	Values *runtime.RawExtension `json:"values,omitempty" yaml:"values,omitempty"`
+}
+
+// ExternalApiStrategy defines external API provisioning configuration
+type ExternalApiStrategy struct {
+	// Endpoint is the external API endpoint URL
+	Endpoint string `json:"endpoint" yaml:"endpoint"`
+
+	// Method is the HTTP method (default: POST)
+	Method string `json:"method,omitempty" yaml:"method,omitempty"`
+
+	// Path is the API path to append to endpoint
+	Path string `json:"path,omitempty" yaml:"path,omitempty"`
+
+	// Auth defines authentication configuration
+	Auth *ApiAuth `json:"auth,omitempty" yaml:"auth,omitempty"`
+
+	// Request defines the request body template
+	Request *runtime.RawExtension `json:"request,omitempty" yaml:"request,omitempty"`
+
+	// Polling defines how to poll for completion
+	Polling *ApiPolling `json:"polling,omitempty" yaml:"polling,omitempty"`
+}
+
+// ApiAuth defines authentication for external APIs
+type ApiAuth struct {
+	// Type defines the auth type: "api-key" | "aws-iam" | "bearer-token"
+	Type string `json:"type" yaml:"type"`
+
+	// SecretRef references a secret containing auth credentials
+	SecretRef string `json:"secretRef,omitempty" yaml:"secretRef,omitempty"`
+
+	// RoleArn is used for AWS IAM authentication
+	RoleArn string `json:"roleArn,omitempty" yaml:"roleArn,omitempty"`
+}
+
+// ApiPolling defines polling configuration for external APIs
+type ApiPolling struct {
+	// StatusField is the response field to check for status
+	StatusField string `json:"statusField" yaml:"statusField"`
+
+	// ReadyValue is the value indicating completion
+	ReadyValue string `json:"readyValue" yaml:"readyValue"`
+
+	// Interval is the polling interval (e.g., "30s")
+	Interval string `json:"interval" yaml:"interval"`
+
+	// Timeout is the maximum time to wait (e.g., "20m")
+	Timeout string `json:"timeout" yaml:"timeout"`
 }
 
 // ClassSpec defines available service tiers/sizes for a resource type
