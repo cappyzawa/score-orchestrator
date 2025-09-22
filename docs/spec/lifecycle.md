@@ -345,4 +345,76 @@ func isHTTPPort(port int32) bool {
 - Runtimes and Provisioners do not write to Workload status
 - Single canonical endpoint is exposed (no multiple endpoints)
 
+## Phase 6: Workload Deletion and Cleanup
+
+### Deletion Flow Overview
+
+When a user deletes a Workload resource, the system follows a controlled cleanup sequence to ensure proper resource deprovisioning and avoid data loss.
+
+```
+User deletes Workload
+    ↓
+Orchestrator adds finalizer (if not present)
+    ↓
+Orchestrator processes ResourceClaim deletion according to DeprovisionPolicy
+    ↓
+Wait for ResourceClaim cleanup completion
+    ↓
+Orchestrator removes finalizer
+    ↓
+Workload deleted by Kubernetes GC
+```
+
+### Finalizer Control
+
+The Orchestrator uses a finalizer (`workloads.score.dev/finalizer`) to control deletion ordering:
+
+1. **Finalizer Addition**: Added automatically when ResourceClaims are created
+2. **Deletion Processing**: Processes each ResourceClaim according to its `DeprovisionPolicy`
+3. **Cleanup Verification**: Waits for all ResourceClaims with `Delete` policy to be removed
+4. **Finalizer Removal**: Removes finalizer only after cleanup completion
+
+### DeprovisionPolicy Behavior
+
+Each ResourceClaim can specify how it should be handled during deletion:
+
+#### Delete Policy (Default)
+- **Behavior**: Standard deletion via OwnerReference
+- **Wait Condition**: Orchestrator waits for complete removal
+- **Use Case**: Temporary resources that should be cleaned up
+
+#### Retain Policy
+- **Behavior**: Remove OwnerReference, keep ResourceClaim
+- **Wait Condition**: No waiting required
+- **Use Case**: Persistent resources that should survive Workload deletion
+
+#### Orphan Policy
+- **Behavior**: Leave ResourceClaim unchanged
+- **Wait Condition**: No waiting required
+- **Use Case**: Shared resources managed independently
+
+### Deletion State Transitions
+
+```
+[User deletes Workload]
+        ↓
+[Orchestrator detects deletion]
+        ↓
+[Process each ResourceClaim] → [Apply DeprovisionPolicy]
+        ↓                              ↓
+[Count claims needing deletion] ← [Delete/Retain/Orphan]
+        ↓
+[claimsToWaitFor > 0?] → Yes → [Requeue and wait]
+        ↓ No                        ↓
+[Remove finalizer]                   [Check again later]
+        ↓
+[Workload deleted]
+```
+
+### Error Handling During Deletion
+
+- **DeprovisionPolicy Processing Errors**: Log error and requeue for retry
+- **Finalizer Removal Errors**: Log error and requeue for retry
+- **ResourceClaim Enumeration Errors**: Return error and requeue
+
 This lifecycle ensures that users have a simple, consistent interface while platforms maintain full control over resource provisioning and workload execution across diverse runtime environments.
