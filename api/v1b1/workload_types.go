@@ -25,6 +25,7 @@ import (
 type ContainerSpec struct {
 	// Image is the container image reference. Use "." for build-from-source
 	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:XValidation:rule="self == '.' || !self.startsWith('-') && !self.endsWith('-')",message="image must be '.' for build-from-source or a valid image reference"
 	Image string `json:"image"`
 
 	// Command to run in the container
@@ -58,6 +59,7 @@ type ContainerSpec struct {
 }
 
 // FileSpec defines a file to be mounted in the container
+// +kubebuilder:validation:XValidation:rule="(has(self.source) ? 1 : 0) + (has(self.content) ? 1 : 0) + (has(self.binaryContent) ? 1 : 0) == 1",message="exactly one of source, content, or binaryContent must be specified"
 type FileSpec struct {
 	// Target path where the file should be mounted
 	// +kubebuilder:validation:MinLength=1
@@ -182,6 +184,7 @@ type WorkloadSpec struct {
 	// Containers define the containers in the workload
 	// +kubebuilder:validation:MinProperties=1
 	// +kubebuilder:validation:MaxProperties=10
+	// +kubebuilder:validation:XValidation:rule="size(self) > 0",message="containers must contain at least one container"
 	Containers map[string]ContainerSpec `json:"containers"`
 
 	// Service defines the service configuration
