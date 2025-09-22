@@ -158,6 +158,17 @@ spec:
 			return err == nil
 		}, time.Minute, time.Second).Should(BeTrue())
 
+		By("Verifying Deployment has correct resource requirements")
+		cmd = exec.Command("kubectl", "get", "deployment", "service-a", "-n", namespaceName,
+			"-o", "jsonpath={.spec.template.spec.containers[0].resources}")
+		output, err = utils.Run(cmd)
+		Expect(err).NotTo(HaveOccurred())
+		resourcesOutput := strings.TrimSpace(output)
+		Expect(resourcesOutput).To(ContainSubstring("100m"))  // CPU request
+		Expect(resourcesOutput).To(ContainSubstring("64Mi"))  // Memory request
+		Expect(resourcesOutput).To(ContainSubstring("200m"))  // CPU limit
+		Expect(resourcesOutput).To(ContainSubstring("128Mi")) // Memory limit
+
 		By("Waiting for Deployment to be ready")
 		Eventually(func() bool {
 			cmd := exec.Command("kubectl", "get", "deployment", "service-a", "-n", namespaceName,
