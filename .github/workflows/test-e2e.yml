@@ -80,23 +80,37 @@ jobs:
 
     - name: Running Test e2e
       id: e2e
+      continue-on-error: true
       run: |
         # Keep tidy for parity with local runs (optional)
         go mod tidy
+        # Run tests and capture exit code
+        set +e
         make test-e2e
+        code=$?
+        echo "code=${code}" >> "$GITHUB_OUTPUT"
+        # Do not fail the job here; we will fail explicitly at the end
+        exit 0
+
+    - name: Debug gating values
+      if: ${{ always() }}
+      run: |
+        echo "event_name=${{ github.event_name }}"
+        echo "is_pr_comment=$(if [ '${{ github.event_name }}' = 'issue_comment' ]; then echo yes; else echo no; fi)"
+        echo "e2e_exit_code=${{ steps.e2e.outputs.code }}"
 
     - name: Report back to PR
-      # Leave a result comment only when triggered by a PR comment
-      if: github.event_name == 'issue_comment'
+      # Always try to comment back on PR-triggered runs, even if tests failed
+      if: ${{ always() && github.event_name == 'issue_comment' }}
       uses: actions/github-script@v7
       with:
-        # Explicitly pass the token so github-script uses it
         github-token: ${{ secrets.GITHUB_TOKEN }}
         script: |
-          const outcome = "${{ job.status }}";
+          const code = Number("${{ steps.e2e.outputs.code || 1 }}");
+          const ok = code === 0;
           const ref = "${{ steps.target.outputs.ref }}";
           const url = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
-          const body = outcome === "success"
+          const body = ok
             ? `✅ E2E passed on \`${ref}\` — [view run](${url})`
             : `❌ E2E failed on \`${ref}\` — [view run](${url})`;
           await github.rest.issues.createComment({
@@ -105,4 +119,10 @@ jobs:
             issue_number: ${{ github.event.issue.number }},
             body
           });
+
+    - name: Fail job if E2E failed
+      if: ${{ steps.e2e.outputs.code != '0' }}
+      run: |
+        echo "E2E failed with exit code ${{ steps.e2e.outputs.code }}"
+        exit 1
 
