@@ -10,6 +10,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -106,7 +107,10 @@ func (r *KubernetesRuntimeReconciler) getWorkload(ctx context.Context, plan *sco
 
 // reconcileDeployment creates or updates the Deployment for the WorkloadPlan
 func (r *KubernetesRuntimeReconciler) reconcileDeployment(ctx context.Context, plan *scorev1b1.WorkloadPlan, workload *scorev1b1.Workload) error {
-	deployment := r.buildDeployment(ctx, plan, workload)
+	deployment, err := r.buildDeployment(ctx, plan, workload)
+	if err != nil {
+		return fmt.Errorf("failed to build deployment: %w", err)
+	}
 
 	// Set WorkloadPlan as owner for garbage collection
 	if err := ctrl.SetControllerReference(plan, deployment, r.Scheme); err != nil {
@@ -216,7 +220,7 @@ func (r *KubernetesRuntimeReconciler) reconcileService(ctx context.Context, plan
 }
 
 // buildDeployment constructs a Deployment from WorkloadPlan and Workload
-func (r *KubernetesRuntimeReconciler) buildDeployment(ctx context.Context, plan *scorev1b1.WorkloadPlan, workload *scorev1b1.Workload) *appsv1.Deployment {
+func (r *KubernetesRuntimeReconciler) buildDeployment(ctx context.Context, plan *scorev1b1.WorkloadPlan, workload *scorev1b1.Workload) (*appsv1.Deployment, error) {
 	name := plan.Spec.WorkloadRef.Name
 	namespace := plan.Spec.WorkloadRef.Namespace
 
@@ -257,7 +261,28 @@ func (r *KubernetesRuntimeReconciler) buildDeployment(ctx context.Context, plan 
 				Requests: make(corev1.ResourceList),
 				Limits:   make(corev1.ResourceList),
 			}
-			// TODO: Parse and set resource requests/limits from containerSpec.Resources
+
+			// Parse requests
+			if containerSpec.Resources.Requests != nil {
+				for key, value := range containerSpec.Resources.Requests {
+					quantity, err := resource.ParseQuantity(value)
+					if err != nil {
+						return nil, fmt.Errorf("invalid request %s value %s: %w", key, value, err)
+					}
+					container.Resources.Requests[corev1.ResourceName(key)] = quantity
+				}
+			}
+
+			// Parse limits
+			if containerSpec.Resources.Limits != nil {
+				for key, value := range containerSpec.Resources.Limits {
+					quantity, err := resource.ParseQuantity(value)
+					if err != nil {
+						return nil, fmt.Errorf("invalid limit %s value %s: %w", key, value, err)
+					}
+					container.Resources.Limits[corev1.ResourceName(key)] = quantity
+				}
+			}
 		}
 
 		containers = append(containers, container)
@@ -300,7 +325,7 @@ func (r *KubernetesRuntimeReconciler) buildDeployment(ctx context.Context, plan 
 		},
 	}
 
-	return deployment
+	return deployment, nil
 }
 
 // buildService constructs a Service from WorkloadPlan and Workload
