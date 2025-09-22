@@ -8,6 +8,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -112,6 +113,9 @@ func (r *KubernetesRuntimeReconciler) reconcileDeployment(ctx context.Context, p
 		return fmt.Errorf("failed to set controller reference: %w", err)
 	}
 
+	// Apply defaults to ensure consistent comparison
+	r.Scheme.Default(deployment)
+
 	// Create or update the deployment
 	existing := &appsv1.Deployment{}
 	key := types.NamespacedName{Namespace: deployment.Namespace, Name: deployment.Name}
@@ -127,15 +131,25 @@ func (r *KubernetesRuntimeReconciler) reconcileDeployment(ctx context.Context, p
 			return fmt.Errorf("failed to get deployment: %w", err)
 		}
 	} else {
-		// Update existing deployment
-		existing.Spec = deployment.Spec
-		existing.Labels = deployment.Labels
-		existing.Annotations = deployment.Annotations
+		// Use in-place mutation with MergeFrom patch
+		before := existing.DeepCopy()
 
-		if err := r.Update(ctx, existing); err != nil {
-			return fmt.Errorf("failed to update deployment: %w", err)
+		// Only update fields we own - merge labels and annotations instead of replacing
+		existing.Labels = r.mergeOwnedFields(existing.Labels, deployment.Labels, "score.dev/", "app.kubernetes.io/")
+		existing.Annotations = r.mergeOwnedFields(existing.Annotations, deployment.Annotations, "score.dev/")
+		existing.Spec = deployment.Spec
+
+		// Check if update is needed
+		if !equality.Semantic.DeepEqual(before.Spec, existing.Spec) ||
+			!equality.Semantic.DeepEqual(before.Labels, existing.Labels) ||
+			!equality.Semantic.DeepEqual(before.Annotations, existing.Annotations) {
+
+			patch := client.MergeFrom(before)
+			if err := r.Patch(ctx, existing, patch); err != nil {
+				return fmt.Errorf("failed to update deployment: %w", err)
+			}
+			log.FromContext(ctx).Info("Updated Deployment", "name", deployment.Name)
 		}
-		log.FromContext(ctx).Info("Updated Deployment", "name", deployment.Name)
 	}
 
 	return nil
@@ -156,6 +170,9 @@ func (r *KubernetesRuntimeReconciler) reconcileService(ctx context.Context, plan
 		return fmt.Errorf("failed to set controller reference: %w", err)
 	}
 
+	// Apply defaults to ensure consistent comparison
+	r.Scheme.Default(service)
+
 	// Create or update the service
 	existing := &corev1.Service{}
 	key := types.NamespacedName{Namespace: service.Namespace, Name: service.Name}
@@ -171,17 +188,28 @@ func (r *KubernetesRuntimeReconciler) reconcileService(ctx context.Context, plan
 			return fmt.Errorf("failed to get service: %w", err)
 		}
 	} else {
-		// Update existing service spec (preserve ClusterIP)
-		service.Spec.ClusterIP = existing.Spec.ClusterIP
-		service.ResourceVersion = existing.ResourceVersion
-		existing.Spec = service.Spec
-		existing.Labels = service.Labels
-		existing.Annotations = service.Annotations
+		// Use in-place mutation with MergeFrom patch
+		before := existing.DeepCopy()
 
-		if err := r.Update(ctx, existing); err != nil {
-			return fmt.Errorf("failed to update service: %w", err)
+		// Preserve ClusterIP as it's immutable
+		service.Spec.ClusterIP = existing.Spec.ClusterIP
+
+		// Only update fields we own - merge labels and annotations instead of replacing
+		existing.Labels = r.mergeOwnedFields(existing.Labels, service.Labels, "score.dev/", "app.kubernetes.io/")
+		existing.Annotations = r.mergeOwnedFields(existing.Annotations, service.Annotations, "score.dev/")
+		existing.Spec = service.Spec
+
+		// Check if update is needed
+		if !equality.Semantic.DeepEqual(before.Spec, existing.Spec) ||
+			!equality.Semantic.DeepEqual(before.Labels, existing.Labels) ||
+			!equality.Semantic.DeepEqual(before.Annotations, existing.Annotations) {
+
+			patch := client.MergeFrom(before)
+			if err := r.Patch(ctx, existing, patch); err != nil {
+				return fmt.Errorf("failed to update service: %w", err)
+			}
+			log.FromContext(ctx).Info("Updated Service", "name", service.Name)
 		}
-		log.FromContext(ctx).Info("Updated Service", "name", service.Name)
 	}
 
 	return nil
@@ -485,10 +513,12 @@ func (r *KubernetesRuntimeReconciler) updateWorkloadPlanStatus(ctx context.Conte
 
 	// Update WorkloadPlan status if it has changed
 	if plan.Status.Phase != newPhase || plan.Status.Message != statusMessage {
+		// Use patch for proper optimistic locking
+		patch := client.MergeFrom(plan.DeepCopy())
 		plan.Status.Phase = newPhase
 		plan.Status.Message = statusMessage
 
-		if err := r.Status().Update(ctx, plan); err != nil {
+		if err := r.Status().Patch(ctx, plan, patch); err != nil {
 			return fmt.Errorf("failed to update WorkloadPlan status: %w", err)
 		}
 
@@ -499,6 +529,30 @@ func (r *KubernetesRuntimeReconciler) updateWorkloadPlanStatus(ctx context.Conte
 }
 
 // SetupWithManager sets up the controller with the Manager
+// mergeOwnedFields merges fields that we own into the existing map while preserving others
+func (r *KubernetesRuntimeReconciler) mergeOwnedFields(existing map[string]string, desired map[string]string, ownedPrefixes ...string) map[string]string {
+	if existing == nil {
+		existing = make(map[string]string)
+	}
+
+	// Remove existing keys that we own
+	for key := range existing {
+		for _, prefix := range ownedPrefixes {
+			if strings.HasPrefix(key, prefix) {
+				delete(existing, key)
+				break
+			}
+		}
+	}
+
+	// Add our desired keys
+	for key, value := range desired {
+		existing[key] = value
+	}
+
+	return existing
+}
+
 func (r *KubernetesRuntimeReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&scorev1b1.WorkloadPlan{}).
