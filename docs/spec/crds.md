@@ -168,7 +168,10 @@ Provisioners watch this resource, provision/bind concrete services, and publish 
 - `id` (optional): bind to an existing instance
 - `params` (optional): free-form resolver config
 - `deprovisionPolicy` (optional): Enum { **Delete**, **Retain**, **Orphan** }.
-  Defines how provisioned resources are handled when the claim is removed.
+  Defines how provisioned resources are handled when the claim is removed:
+  - `Delete` (default): Remove all provisioned resources and secrets
+  - `Retain`: Keep provisioned resources but remove ownership/binding
+  - `Orphan`: Leave resources as-is without any cleanup
 
 ### Status (written by Provisioners)
 - **`phase`**: `Pending → Claiming → (Bound | Failed)` (may re-enter on reconcile)

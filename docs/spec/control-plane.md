@@ -19,6 +19,7 @@ It complements:
   - **`Workload.status`** — the *only* writer (exposes `endpoint`, abstract `conditions`, claim summaries)
 - **Finalization:**
   - Adds a finalizer to `Workload` to ensure `ResourceClaim` deprovision completes before removal
+  - Processes `ResourceClaim` deletion according to `DeprovisionPolicy` before removing Workload finalizer
 
 ### Provisioner (PF/vendor)
 - **Watches:** `ResourceClaim` for its `spec.type`; own `Secret/ConfigMap`; external service APIs as needed
@@ -27,7 +28,10 @@ It complements:
 - **Produces image outputs (when applicable):** Provisioners for `image|build|buildpack` types publish an OCI reference as `ResourceClaim.status.outputs.image`.
 - **Plan linkage:** The Orchestrator emits a `WorkloadPlan` projection that binds that output into the final container image, e.g.:
   - `containers[].imageFrom: { claimKey, outputKey: "image" }`
-- **Finalization:** On `ResourceClaim` deletion, deprovision external resources / Secrets, then remove finalizer
+- **Finalization:** On `ResourceClaim` deletion, respects `DeprovisionPolicy`:
+  - `Delete` (default): deprovision external resources / Secrets, then remove finalizer
+  - `Retain`: keep provisioned resources but unbind from Workload
+  - `Orphan`: leave resources as-is without cleanup
 
 ### Runtime Controller (PF)
 - **Watches:** `WorkloadPlan` (primary), `ResourceClaim` (consume `status.outputs`), `Workload` (labels/metadata)
