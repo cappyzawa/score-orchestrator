@@ -23,4 +23,12 @@ package controller
 const (
 	// EventReasonDeleted indicates successful workload deletion
 	EventReasonDeleted = "Deleted"
+	// EventReasonFinalizerAdded indicates finalizer was added to workload
+	EventReasonFinalizerAdded = "FinalizerAdded"
+
+	// EventReasonFinalizerRemoved indicates finalizer was removed from workload
+	EventReasonFinalizerRemoved = "FinalizerRemoved"
+
+	// EventReasonClaimCleanupPending indicates waiting for claim cleanup
+	EventReasonClaimCleanupPending = "ClaimCleanupPending"
 )
