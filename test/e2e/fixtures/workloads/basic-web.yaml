@@ -18,7 +18,7 @@ spec:
       protocol: TCP
   resources:
     db:
-      type: postgres
+      type: postgresql
       class: small
     cache:
       type: redis

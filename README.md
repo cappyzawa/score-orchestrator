@@ -30,5 +30,16 @@ Score defines a portable way to describe applications. This project provides a s
 ## Discussion & background
 - Score spec discussion: https://github.com/score-spec/spec/discussions/157
 
+## Implementation Status
+
+**Golden Path Complete**: End-to-end flow from Workload creation to Ready state is functional.
+
+**Current Limitations** (marked as TODO in code):
+- Kubernetes runtime: Resource requests/limits parsing not fully implemented
+- Endpoint derivation: Template-based endpoint generation is placeholder
+- Service-based endpoint derivation: Simplified implementation
+
+See code comments with `TODO` for detailed improvement areas.
+
 ## Contributing
 See [`CONTRIBUTING.md`](CONTRIBUTING.md). PRs that improve docs, tests, and conformance are welcome.

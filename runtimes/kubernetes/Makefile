@@ -61,8 +61,9 @@ docker-push: ## Push docker image with the kubernetes-runtime.
 
 # KUBECTL and KUSTOMIZE need to be available
 KUBECTL ?= kubectl
-# Check if kustomize exists in expected location, fallback to PATH
-KUSTOMIZE_BIN := $(shell if [ -f ../../bin/kustomize ]; then echo "../../bin/kustomize"; else echo "kustomize"; fi)
+# Use absolute path for kustomize to avoid path issues
+PROJECT_ROOT := $(shell cd ../.. && pwd)
+KUSTOMIZE_BIN := $(shell if [ -f $(PROJECT_ROOT)/bin/kustomize ]; then echo "$(PROJECT_ROOT)/bin/kustomize"; else echo "kustomize"; fi)
 KUSTOMIZE ?= $(KUSTOMIZE_BIN)
 
 .PHONY: deploy

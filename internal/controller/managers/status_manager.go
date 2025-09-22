@@ -4,8 +4,12 @@ import (
 	"context"
 	"fmt"
 
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -215,12 +219,106 @@ func (sm *StatusManager) updateRuntimeStatusFromPlan(
 		log.V(1).Info("Derived endpoint", "endpoint", *derivedEndpoint)
 	}
 
-	// For MVP, assume runtime is provisioning when plan exists
-	// In a full implementation, this would check actual runtime status
-	sm.SetRuntimeReadyCondition(
-		workload,
-		false,
-		conditions.ReasonRuntimeProvisioning,
-		"Runtime resources are being provisioned",
-	)
+	// Check actual runtime resource status
+	runtimeReady, reason, message := sm.checkRuntimeResourceStatus(ctx, workload, plan)
+	sm.SetRuntimeReadyCondition(workload, runtimeReady, reason, message)
+}
+
+// checkRuntimeResourceStatus checks the actual state of runtime resources for kubernetes runtime
+func (sm *StatusManager) checkRuntimeResourceStatus(
+	ctx context.Context,
+	workload *scorev1b1.Workload,
+	plan *scorev1b1.WorkloadPlan,
+) (bool, string, string) {
+	log := ctrl.LoggerFrom(ctx)
+
+	// For non-kubernetes runtimes, assume ready for now
+	if plan.Spec.RuntimeClass != "kubernetes" {
+		return true, conditions.ReasonSucceeded, "Runtime provisioned successfully"
+	}
+
+	workloadName := plan.Spec.WorkloadRef.Name
+	namespace := plan.Spec.WorkloadRef.Namespace
+
+	// Check Deployment status
+	deployment := &appsv1.Deployment{}
+	deploymentKey := types.NamespacedName{
+		Name:      workloadName,
+		Namespace: namespace,
+	}
+
+	err := sm.client.Get(ctx, deploymentKey, deployment)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			log.V(1).Info("Deployment not found, runtime provisioning in progress", "deployment", workloadName)
+			return false, conditions.ReasonRuntimeProvisioning, "Runtime resources are being provisioned"
+		}
+		log.Error(err, "Failed to get Deployment", "deployment", workloadName)
+		return false, conditions.ReasonRuntimeProvisioning, fmt.Sprintf("Failed to check runtime status: %v", err)
+	}
+
+	// Check if Deployment is ready - first check ReadyReplicas if available
+	if deployment.Status.ReadyReplicas > 0 && deployment.Status.ReadyReplicas >= deployment.Status.Replicas {
+		log.V(1).Info("Deployment ready via ReadyReplicas", "deployment", workloadName, "readyReplicas", deployment.Status.ReadyReplicas, "replicas", deployment.Status.Replicas)
+	} else {
+		// ReadyReplicas might not be updated yet, check Pods directly
+		pods := &corev1.PodList{}
+		listOpts := []client.ListOption{
+			client.InNamespace(namespace),
+			client.MatchingLabels(deployment.Spec.Selector.MatchLabels),
+		}
+
+		err := sm.client.List(ctx, pods, listOpts...)
+		if err != nil {
+			log.Error(err, "Failed to list Pods", "deployment", workloadName)
+			return false, conditions.ReasonRuntimeProvisioning, fmt.Sprintf("Failed to check pod status: %v", err)
+		}
+
+		readyPods := 0
+		for _, pod := range pods.Items {
+			if pod.Status.Phase == corev1.PodRunning {
+				for _, condition := range pod.Status.Conditions {
+					if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+						readyPods++
+						break
+					}
+				}
+			}
+		}
+
+		if readyPods == 0 {
+			log.V(1).Info("No ready pods found", "deployment", workloadName, "totalPods", len(pods.Items), "readyPods", readyPods)
+			return false, conditions.ReasonRuntimeProvisioning, "Runtime deployment is starting up"
+		}
+
+		log.V(1).Info("Deployment ready via pod check", "deployment", workloadName, "readyPods", readyPods, "totalPods", len(pods.Items))
+	}
+
+	// Check Service status (if it should exist)
+	if workload.Spec.Service != nil && len(workload.Spec.Service.Ports) > 0 {
+		service := &corev1.Service{}
+		serviceKey := types.NamespacedName{
+			Name:      workloadName,
+			Namespace: namespace,
+		}
+
+		err := sm.client.Get(ctx, serviceKey, service)
+		if err != nil {
+			if errors.IsNotFound(err) {
+				log.V(1).Info("Service not found, runtime provisioning in progress", "service", workloadName)
+				return false, conditions.ReasonRuntimeProvisioning, "Runtime service is being provisioned"
+			}
+			log.Error(err, "Failed to get Service", "service", workloadName)
+			return false, conditions.ReasonRuntimeProvisioning, fmt.Sprintf("Failed to check service status: %v", err)
+		}
+
+		// Basic service readiness check - ensure it has a ClusterIP
+		if service.Spec.ClusterIP == "" {
+			log.V(1).Info("Service not ready", "service", workloadName)
+			return false, conditions.ReasonRuntimeProvisioning, "Runtime service is being configured"
+		}
+	}
+
+	log.Info("Runtime resources are ready", "workload", workloadName)
+	return true, conditions.ReasonSucceeded, "Runtime provisioned successfully"
 }

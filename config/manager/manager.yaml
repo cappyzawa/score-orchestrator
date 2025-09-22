@@ -69,7 +69,7 @@ spec:
         name: manager
         env:
         - name: SUPPORTED_RESOURCE_TYPES
-          value: "postgresql,redis,mysql,mongodb,s3,rabbitmq"
+          value: "postgres,redis,mysql,mongodb,s3,rabbitmq"
         ports: []
         securityContext:
           readOnlyRootFilesystem: true

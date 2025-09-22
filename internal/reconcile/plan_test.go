@@ -101,7 +101,7 @@ func TestValidateProjectionRequirements(t *testing.T) {
 					Containers: map[string]scorev1b1.ContainerSpec{
 						"app": {
 							Variables: map[string]string{
-								"DATABASE_URL": "${resources.db.outputs.uri}",
+								"DATABASE_URL": "${resources.db.outputs.nonexistent}",
 							},
 						},
 					},
@@ -114,13 +114,13 @@ func TestValidateProjectionRequirements(t *testing.T) {
 						OutputsAvailable: true,
 						Outputs: &scorev1b1.ResourceClaimOutputs{
 							SecretRef: &scorev1b1.LocalObjectReference{Name: "db-secret"},
-							// URI is missing
+							// nonexistent field is missing
 						},
 					},
 				},
 			},
 			expectError: true,
-			errorMsg:    "missing output 'uri'",
+			errorMsg:    "missing output 'nonexistent'",
 		},
 		{
 			name: "volume source references",

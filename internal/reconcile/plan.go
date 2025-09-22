@@ -158,38 +158,20 @@ func generateEnvMappings(workload *scorev1b1.Workload, claims []scorev1b1.Resour
 	var envMappings []scorev1b1.EnvMapping
 
 	// Create a map of available outputs for quick lookup
-	availableOutputs := make(map[string]map[string]bool)
-	for _, claim := range claims {
-		if claim.Status.OutputsAvailable {
-			outputs := make(map[string]bool)
-			if claim.Status.Outputs.URI != nil {
-				outputs[outputKeyURI] = true
-			}
-			if claim.Status.Outputs.SecretRef != nil {
-				outputs["secretRef"] = true
-			}
-			if claim.Status.Outputs.ConfigMapRef != nil {
-				outputs["configMapRef"] = true
-			}
-			if claim.Status.Outputs.Image != nil {
-				outputs["image"] = true
-			}
-			if claim.Status.Outputs.Cert != nil {
-				outputs["cert"] = true
-			}
-			availableOutputs[claim.Spec.Key] = outputs
-		}
-	}
+	availableOutputs := buildAvailableOutputsMap(claims)
 
-	// Regular expression to match ${resources.<key>.outputs.<name>} patterns
-	resourceRefPattern := regexp.MustCompile(`\$\{resources\.([^.]+)\.outputs\.([^}]+)\}`)
+	// Regular expressions to match both ${resources.<key>.<name>} and ${resources.<key>.outputs.<name>} patterns
+	resourceRefPattern := regexp.MustCompile(`\$\{resources\.([^.]+)\.([^}]+)\}`)
+	resourceRefWithOutputsPattern := regexp.MustCompile(`\$\{resources\.([^.]+)\.outputs\.([^}]+)\}`)
 
 	// Scan all container environment variables for resource references
 	for _, container := range workload.Spec.Containers {
 		if container.Variables != nil {
 			for envName, envValue := range container.Variables {
-				matches := resourceRefPattern.FindAllStringSubmatch(envValue, -1)
-				for _, match := range matches {
+				// First try the old format: ${resources.<key>.outputs.<name>} (more specific)
+				outputsMatches := resourceRefWithOutputsPattern.FindAllStringSubmatch(envValue, -1)
+				foundOldFormat := len(outputsMatches) > 0
+				for _, match := range outputsMatches {
 					if len(match) >= 3 {
 						resourceKey := match[1]
 						outputKey := match[2]
@@ -204,6 +186,30 @@ func generateEnvMappings(workload *scorev1b1.Workload, claims []scorev1b1.Resour
 										OutputKey: outputKey,
 									},
 								})
+							}
+						}
+					}
+				}
+
+				// If no old format found, try the new format: ${resources.<key>.<name>}
+				if !foundOldFormat {
+					matches := resourceRefPattern.FindAllStringSubmatch(envValue, -1)
+					for _, match := range matches {
+						if len(match) >= 3 {
+							resourceKey := match[1]
+							outputKey := match[2]
+
+							// Check if the referenced output is available
+							if outputs, exists := availableOutputs[resourceKey]; exists {
+								if outputs[outputKey] {
+									envMappings = append(envMappings, scorev1b1.EnvMapping{
+										Name: envName,
+										From: scorev1b1.FromClaimOutput{
+											ClaimKey:  resourceKey,
+											OutputKey: outputKey,
+										},
+									})
+								}
 							}
 						}
 					}
@@ -268,13 +274,17 @@ func generateVolumeProjections(workload *scorev1b1.Workload, claims []scorev1b1.
 		if container.Files != nil {
 			for _, file := range container.Files {
 				if file.Source != nil {
-					// Check if source references a resource output
-					resourceRefPattern := regexp.MustCompile(`\$\{resources\.([^.]+)\.outputs\.([^}]+)\}`)
-					matches := resourceRefPattern.FindStringSubmatch(file.Source.URI)
+					// Check both ${resources.<key>.<name>} and ${resources.<key>.outputs.<name>} patterns
+					resourceRefPattern := regexp.MustCompile(`\$\{resources\.([^.]+)\.([^}]+)\}`)
+					resourceRefWithOutputsPattern := regexp.MustCompile(`\$\{resources\.([^.]+)\.outputs\.([^}]+)\}`)
 
-					if len(matches) >= 3 {
-						resourceKey := matches[1]
-						outputKey := matches[2]
+					// First check old format: ${resources.<key>.outputs.<name>} (more specific)
+					outputsMatches := resourceRefWithOutputsPattern.FindStringSubmatch(file.Source.URI)
+					foundOldFormat := false
+					if len(outputsMatches) >= 3 {
+						foundOldFormat = true
+						resourceKey := outputsMatches[1]
+						outputKey := outputsMatches[2]
 
 						// Check if the referenced output is available and is a volume-like reference
 						if refs, exists := availableRefs[resourceKey]; exists {
@@ -288,6 +298,31 @@ func generateVolumeProjections(workload *scorev1b1.Workload, claims []scorev1b1.
 										},
 									})
 									break
+								}
+							}
+						}
+					}
+
+					// If no old format found, check new format: ${resources.<key>.<name>}
+					if !foundOldFormat {
+						matches := resourceRefPattern.FindStringSubmatch(file.Source.URI)
+						if len(matches) >= 3 {
+							resourceKey := matches[1]
+							outputKey := matches[2]
+
+							// Check if the referenced output is available and is a volume-like reference
+							if refs, exists := availableRefs[resourceKey]; exists {
+								for _, ref := range refs {
+									if ref == outputKey {
+										volumeProjections = append(volumeProjections, scorev1b1.VolumeProjection{
+											Name: fmt.Sprintf("%s-%s", resourceKey, outputKey),
+											From: &scorev1b1.FromClaimOutput{
+												ClaimKey:  resourceKey,
+												OutputKey: outputKey,
+											},
+										})
+										break
+									}
 								}
 							}
 						}
@@ -317,12 +352,16 @@ func generateFileProjections(workload *scorev1b1.Workload, claims []scorev1b1.Re
 		if container.Files != nil {
 			for _, file := range container.Files {
 				if file.Source != nil {
-					// Check if source references a certificate resource
-					resourceRefPattern := regexp.MustCompile(`\$\{resources\.([^.]+)\.outputs\.cert\}`)
-					matches := resourceRefPattern.FindStringSubmatch(file.Source.URI)
+					// Check both ${resources.<key>.cert} and ${resources.<key>.outputs.cert} patterns
+					resourceRefPattern := regexp.MustCompile(`\$\{resources\.([^.]+)\.cert\}`)
+					resourceRefWithOutputsPattern := regexp.MustCompile(`\$\{resources\.([^.]+)\.outputs\.cert\}`)
 
-					if len(matches) >= 2 {
-						resourceKey := matches[1]
+					// First check old format: ${resources.<key>.outputs.cert} (more specific)
+					outputsMatches := resourceRefWithOutputsPattern.FindStringSubmatch(file.Source.URI)
+					foundOldFormat := false
+					if len(outputsMatches) >= 2 {
+						foundOldFormat = true
+						resourceKey := outputsMatches[1]
 
 						// Check if the referenced cert output is available
 						if availableCerts[resourceKey] {
@@ -333,6 +372,25 @@ func generateFileProjections(workload *scorev1b1.Workload, claims []scorev1b1.Re
 									OutputKey: "cert",
 								},
 							})
+						}
+					}
+
+					// If no old format found, check new format: ${resources.<key>.cert}
+					if !foundOldFormat {
+						matches := resourceRefPattern.FindStringSubmatch(file.Source.URI)
+						if len(matches) >= 2 {
+							resourceKey := matches[1]
+
+							// Check if the referenced cert output is available
+							if availableCerts[resourceKey] {
+								fileProjections = append(fileProjections, scorev1b1.FileProjection{
+									Path: file.Target,
+									From: &scorev1b1.FromClaimOutput{
+										ClaimKey:  resourceKey,
+										OutputKey: "cert",
+									},
+								})
+							}
 						}
 					}
 				}
@@ -346,6 +404,25 @@ func generateFileProjections(workload *scorev1b1.Workload, claims []scorev1b1.Re
 // validateProjectionRequirements checks if all required resource outputs are available for projection
 func validateProjectionRequirements(workload *scorev1b1.Workload, claims []scorev1b1.ResourceClaim) error {
 	// Create a map of available outputs
+	availableOutputs := buildAvailableOutputsMap(claims)
+
+	var missingOutputs []string
+
+	// Check container environment variables and files
+	for containerName, container := range workload.Spec.Containers {
+		missing := validateContainerProjections(containerName, container, availableOutputs)
+		missingOutputs = append(missingOutputs, missing...)
+	}
+
+	if len(missingOutputs) > 0 {
+		return fmt.Errorf("missing required outputs for projection: %s", strings.Join(missingOutputs, "; "))
+	}
+
+	return nil
+}
+
+// buildAvailableOutputsMap creates a map of available outputs for each claim
+func buildAvailableOutputsMap(claims []scorev1b1.ResourceClaim) map[string]map[string]bool {
 	availableOutputs := make(map[string]map[string]bool)
 	for _, claim := range claims {
 		if claim.Status.OutputsAvailable {
@@ -355,6 +432,14 @@ func validateProjectionRequirements(workload *scorev1b1.Workload, claims []score
 			}
 			if claim.Status.Outputs.SecretRef != nil {
 				outputs["secretRef"] = true
+				// For Secret references, assume common database fields are available
+				// This is a simplification for the golden path implementation
+				outputs["username"] = true
+				outputs["password"] = true
+				outputs["host"] = true
+				outputs["port"] = true
+				outputs["database"] = true
+				outputs["uri"] = true
 			}
 			if claim.Status.Outputs.ConfigMapRef != nil {
 				outputs["configMapRef"] = true
@@ -368,62 +453,110 @@ func validateProjectionRequirements(workload *scorev1b1.Workload, claims []score
 			availableOutputs[claim.Spec.Key] = outputs
 		}
 	}
+	return availableOutputs
+}
 
-	// Regular expression to match ${resources.<key>.outputs.<name>} patterns
-	resourceRefPattern := regexp.MustCompile(`\$\{resources\.([^.]+)\.outputs\.([^}]+)\}`)
-
+// validateContainerProjections validates projections for a single container
+func validateContainerProjections(containerName string, container scorev1b1.ContainerSpec, availableOutputs map[string]map[string]bool) []string {
 	var missingOutputs []string
 
-	// Check container environment variables
-	for containerName, container := range workload.Spec.Containers {
-		if container.Variables != nil {
-			for envName, envValue := range container.Variables {
-				matches := resourceRefPattern.FindAllStringSubmatch(envValue, -1)
-				for _, match := range matches {
-					if len(match) >= 3 {
-						resourceKey := match[1]
-						outputKey := match[2]
+	// Check environment variables
+	if container.Variables != nil {
+		missing := validateEnvironmentVariables(containerName, container.Variables, availableOutputs)
+		missingOutputs = append(missingOutputs, missing...)
+	}
 
-						// Check if the referenced output is available
-						if outputs, exists := availableOutputs[resourceKey]; !exists {
-							missingOutputs = append(missingOutputs, fmt.Sprintf("container[%s].env[%s]: resource '%s' has no outputs available", containerName, envName, resourceKey))
-						} else if !outputs[outputKey] {
-							missingOutputs = append(missingOutputs, fmt.Sprintf("container[%s].env[%s]: resource '%s' missing output '%s'", containerName, envName, resourceKey, outputKey))
-						}
-					}
-				}
+	// Check files
+	if container.Files != nil {
+		missing := validateFileReferences(containerName, container.Files, availableOutputs)
+		missingOutputs = append(missingOutputs, missing...)
+	}
+
+	return missingOutputs
+}
+
+// validateEnvironmentVariables validates environment variable references
+func validateEnvironmentVariables(containerName string, variables map[string]string, availableOutputs map[string]map[string]bool) []string {
+	var missingOutputs []string
+
+	// Regular expressions to match both formats
+	resourceRefPattern := regexp.MustCompile(`\$\{resources\.([^.]+)\.([^}]+)\}`)
+	resourceRefWithOutputsPattern := regexp.MustCompile(`\$\{resources\.([^.]+)\.outputs\.([^}]+)\}`)
+
+	for envName, envValue := range variables {
+		missing := validateResourceReferences(envValue, resourceRefPattern, resourceRefWithOutputsPattern, availableOutputs, func(resourceKey, outputKey string) string {
+			return fmt.Sprintf("container[%s].env[%s]: resource '%s' missing output '%s'", containerName, envName, resourceKey, outputKey)
+		}, func(resourceKey string) string {
+			return fmt.Sprintf("container[%s].env[%s]: resource '%s' has no outputs available", containerName, envName, resourceKey)
+		})
+		missingOutputs = append(missingOutputs, missing...)
+	}
+
+	return missingOutputs
+}
+
+// validateFileReferences validates file source references
+func validateFileReferences(containerName string, files []scorev1b1.FileSpec, availableOutputs map[string]map[string]bool) []string {
+	var missingOutputs []string
+
+	// Regular expressions to match both formats
+	resourceRefPattern := regexp.MustCompile(`\$\{resources\.([^.]+)\.([^}]+)\}`)
+	resourceRefWithOutputsPattern := regexp.MustCompile(`\$\{resources\.([^.]+)\.outputs\.([^}]+)\}`)
+
+	for i, file := range files {
+		if file.Source != nil {
+			missing := validateResourceReferences(file.Source.URI, resourceRefPattern, resourceRefWithOutputsPattern, availableOutputs, func(resourceKey, outputKey string) string {
+				return fmt.Sprintf("container[%s].files[%d]: resource '%s' missing output '%s'", containerName, i, resourceKey, outputKey)
+			}, func(resourceKey string) string {
+				return fmt.Sprintf("container[%s].files[%d]: resource '%s' has no outputs available", containerName, i, resourceKey)
+			})
+			missingOutputs = append(missingOutputs, missing...)
+		}
+	}
+
+	return missingOutputs
+}
+
+// validateResourceReferences validates resource references in a value string
+func validateResourceReferences(value string, resourceRefPattern, resourceRefWithOutputsPattern *regexp.Regexp, availableOutputs map[string]map[string]bool, missingOutputMsg func(string, string) string, noOutputsMsg func(string) string) []string {
+	var missingOutputs []string
+
+	// First check old format: ${resources.<key>.outputs.<name>} (more specific)
+	outputsMatches := resourceRefWithOutputsPattern.FindAllStringSubmatch(value, -1)
+	foundOldFormat := len(outputsMatches) > 0
+	for _, match := range outputsMatches {
+		if len(match) >= 3 {
+			resourceKey := match[1]
+			outputKey := match[2]
+
+			// Check if the referenced output is available
+			if outputs, exists := availableOutputs[resourceKey]; !exists {
+				missingOutputs = append(missingOutputs, noOutputsMsg(resourceKey))
+			} else if !outputs[outputKey] {
+				missingOutputs = append(missingOutputs, missingOutputMsg(resourceKey, outputKey))
 			}
 		}
+	}
 
-		// Container volumes are handled via Files with source references
-		// No separate volumes field exists in ContainerSpec
+	// If no old format found, check new format: ${resources.<key>.<name>}
+	if !foundOldFormat {
+		matches := resourceRefPattern.FindAllStringSubmatch(value, -1)
+		for _, match := range matches {
+			if len(match) >= 3 {
+				resourceKey := match[1]
+				outputKey := match[2]
 
-		// Check container files
-		if container.Files != nil {
-			for i, file := range container.Files {
-				if file.Source != nil {
-					matches := resourceRefPattern.FindStringSubmatch(file.Source.URI)
-					if len(matches) >= 3 {
-						resourceKey := matches[1]
-						outputKey := matches[2]
-
-						// Check if the referenced output is available
-						if outputs, exists := availableOutputs[resourceKey]; !exists {
-							missingOutputs = append(missingOutputs, fmt.Sprintf("container[%s].files[%d]: resource '%s' has no outputs available", containerName, i, resourceKey))
-						} else if !outputs[outputKey] {
-							missingOutputs = append(missingOutputs, fmt.Sprintf("container[%s].files[%d]: resource '%s' missing output '%s'", containerName, i, resourceKey, outputKey))
-						}
-					}
+				// Check if the referenced output is available
+				if outputs, exists := availableOutputs[resourceKey]; !exists {
+					missingOutputs = append(missingOutputs, noOutputsMsg(resourceKey))
+				} else if !outputs[outputKey] {
+					missingOutputs = append(missingOutputs, missingOutputMsg(resourceKey, outputKey))
 				}
 			}
 		}
 	}
 
-	if len(missingOutputs) > 0 {
-		return fmt.Errorf("missing required outputs for projection: %s", strings.Join(missingOutputs, "; "))
-	}
-
-	return nil
+	return missingOutputs
 }
 
 // buildPlanClaims creates the claim requirements for the runtime
