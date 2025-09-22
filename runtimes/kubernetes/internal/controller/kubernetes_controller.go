@@ -8,6 +8,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -15,6 +16,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	scorev1b1 "github.com/cappyzawa/score-orchestrator/api/v1b1"
@@ -71,7 +73,14 @@ func (r *KubernetesRuntimeReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{RequeueAfter: time.Minute}, err
 	}
 
-	// 4. Record successful reconciliation
+	// 4. Update WorkloadPlan status based on runtime resource readiness
+	if err := r.updateWorkloadPlanStatus(ctx, plan, workload); err != nil {
+		logger.Error(err, "Failed to update WorkloadPlan status")
+		r.Recorder.Event(plan, corev1.EventTypeWarning, "StatusUpdateFailed", err.Error())
+		return ctrl.Result{RequeueAfter: time.Minute}, err
+	}
+
+	// 5. Record successful reconciliation
 	r.Recorder.Event(plan, corev1.EventTypeNormal, "ResourcesReconciled",
 		"Successfully reconciled Kubernetes resources")
 
@@ -390,11 +399,118 @@ func (r *KubernetesRuntimeReconciler) applyProjection(projection scorev1b1.Workl
 	return result
 }
 
+// updateWorkloadPlanStatus updates WorkloadPlan.Status based on runtime resource readiness
+func (r *KubernetesRuntimeReconciler) updateWorkloadPlanStatus(ctx context.Context, plan *scorev1b1.WorkloadPlan, workload *scorev1b1.Workload) error {
+	logger := log.FromContext(ctx)
+
+	workloadName := plan.Spec.WorkloadRef.Name
+	namespace := plan.Spec.WorkloadRef.Namespace
+
+	// Check Deployment status
+	deployment := &appsv1.Deployment{}
+	deploymentKey := types.NamespacedName{
+		Name:      workloadName,
+		Namespace: namespace,
+	}
+
+	deploymentReady := false
+	var statusMessage string
+	var newPhase scorev1b1.WorkloadPlanPhase
+
+	err := r.Get(ctx, deploymentKey, deployment)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			logger.V(1).Info("Deployment not found, setting status to Provisioning", "deployment", workloadName)
+			newPhase = scorev1b1.WorkloadPlanPhaseProvisioning
+			statusMessage = "Runtime resources are being provisioned"
+		} else {
+			logger.Error(err, "Failed to get Deployment", "deployment", workloadName)
+			newPhase = scorev1b1.WorkloadPlanPhaseFailed
+			statusMessage = fmt.Sprintf("Failed to check runtime status: %v", err)
+		}
+	} else {
+		// Check if Deployment is ready
+		if deployment.Status.ReadyReplicas > 0 && deployment.Status.ReadyReplicas >= deployment.Status.Replicas {
+			deploymentReady = true
+			logger.V(1).Info("Deployment ready", "deployment", workloadName, "readyReplicas", deployment.Status.ReadyReplicas)
+		} else {
+			// Check if any replicas are available at all
+			if deployment.Status.Replicas == 0 {
+				newPhase = scorev1b1.WorkloadPlanPhaseProvisioning
+				statusMessage = "Runtime deployment is being created"
+			} else {
+				newPhase = scorev1b1.WorkloadPlanPhaseProvisioning
+				statusMessage = "Runtime deployment is starting up"
+			}
+		}
+	}
+
+	// Check Service status if deployment is ready and service is required
+	serviceReady := true // Assume ready if no service is needed
+	if deploymentReady && workload.Spec.Service != nil && len(workload.Spec.Service.Ports) > 0 {
+		service := &corev1.Service{}
+		serviceKey := types.NamespacedName{
+			Name:      workloadName,
+			Namespace: namespace,
+		}
+
+		err := r.Get(ctx, serviceKey, service)
+		if err != nil {
+			if errors.IsNotFound(err) {
+				logger.V(1).Info("Service not found, runtime provisioning in progress", "service", workloadName)
+				serviceReady = false
+				newPhase = scorev1b1.WorkloadPlanPhaseProvisioning
+				statusMessage = "Runtime service is being provisioned"
+			} else {
+				logger.Error(err, "Failed to get Service", "service", workloadName)
+				newPhase = scorev1b1.WorkloadPlanPhaseFailed
+				statusMessage = fmt.Sprintf("Failed to check service status: %v", err)
+			}
+		} else {
+			// Basic service readiness check
+			if service.Spec.ClusterIP == "" {
+				logger.V(1).Info("Service not ready", "service", workloadName)
+				serviceReady = false
+				newPhase = scorev1b1.WorkloadPlanPhaseProvisioning
+				statusMessage = "Runtime service is being configured"
+			}
+		}
+	}
+
+	// Determine final phase and message
+	if deploymentReady && serviceReady {
+		newPhase = scorev1b1.WorkloadPlanPhaseReady
+		statusMessage = "Runtime resources are ready"
+	}
+
+	// Update WorkloadPlan status if it has changed
+	if plan.Status.Phase != newPhase || plan.Status.Message != statusMessage {
+		plan.Status.Phase = newPhase
+		plan.Status.Message = statusMessage
+
+		if err := r.Status().Update(ctx, plan); err != nil {
+			return fmt.Errorf("failed to update WorkloadPlan status: %w", err)
+		}
+
+		logger.Info("Updated WorkloadPlan status", "phase", newPhase, "message", statusMessage)
+	}
+
+	return nil
+}
+
 // SetupWithManager sets up the controller with the Manager
 func (r *KubernetesRuntimeReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&scorev1b1.WorkloadPlan{}).
 		Owns(&appsv1.Deployment{}).
 		Owns(&corev1.Service{}).
+		Watches(
+			&appsv1.Deployment{},
+			handler.EnqueueRequestForOwner(mgr.GetScheme(), mgr.GetRESTMapper(), &scorev1b1.WorkloadPlan{}),
+		).
+		Watches(
+			&corev1.Service{},
+			handler.EnqueueRequestForOwner(mgr.GetScheme(), mgr.GetRESTMapper(), &scorev1b1.WorkloadPlan{}),
+		).
 		Complete(r)
 }
