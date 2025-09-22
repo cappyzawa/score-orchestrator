@@ -16,6 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	scorev1b1 "github.com/cappyzawa/score-orchestrator/api/v1b1"
+	"github.com/cappyzawa/score-orchestrator/internal/conditions"
 	"github.com/cappyzawa/score-orchestrator/internal/config"
 )
 
@@ -116,7 +117,7 @@ var _ = Describe("ProvisionerController", func() {
 			Expect(k8sClient.Create(ctx, resourceClaim)).To(Succeed())
 
 			By("Configuring mock strategy to return successful outputs")
-			mockStrategy.SetStatus(scorev1b1.ResourceClaimPhaseBound, ReasonSucceeded, "Resource provisioned")
+			mockStrategy.SetStatus(scorev1b1.ResourceClaimPhaseBound, conditions.ReasonSucceeded, "Resource provisioned")
 			mockStrategy.SetOutputs(&scorev1b1.ResourceClaimOutputs{
 				URI: StringPtr("test://localhost:1234"),
 			})
@@ -146,7 +147,7 @@ var _ = Describe("ProvisionerController", func() {
 			outputs := &scorev1b1.ResourceClaimOutputs{
 				URI: StringPtr("test://localhost:1234"),
 			}
-			mockStrategy.SetStatus(scorev1b1.ResourceClaimPhaseBound, ReasonSucceeded, "Resource provisioned")
+			mockStrategy.SetStatus(scorev1b1.ResourceClaimPhaseBound, conditions.ReasonSucceeded, "Resource provisioned")
 			mockStrategy.SetOutputs(outputs)
 
 			By("Reconciling the ResourceClaim")
@@ -192,7 +193,7 @@ var _ = Describe("ProvisionerController", func() {
 			Expect(k8sClient.Status().Update(ctx, resourceClaim)).To(Succeed())
 
 			By("Configuring mock strategy to return Failed status")
-			mockStrategy.SetStatus(scorev1b1.ResourceClaimPhaseFailed, ReasonClaimFailed, "Provisioning failed")
+			mockStrategy.SetStatus(scorev1b1.ResourceClaimPhaseFailed, conditions.ReasonClaimFailed, "Provisioning failed")
 
 			By("Reconciling the ResourceClaim")
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: namespaceName})

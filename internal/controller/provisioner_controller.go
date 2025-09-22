@@ -14,6 +14,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	scorev1b1 "github.com/cappyzawa/score-orchestrator/api/v1b1"
+	"github.com/cappyzawa/score-orchestrator/internal/conditions"
 	"github.com/cappyzawa/score-orchestrator/internal/config"
 	"github.com/cappyzawa/score-orchestrator/internal/provisioner"
 	"github.com/cappyzawa/score-orchestrator/internal/provisioner/strategy"
@@ -144,7 +145,7 @@ func (r *ProvisionerReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		}
 		log.V(1).Info("Added finalizer to ResourceClaim")
 		// Set initial phase and requeue using GetReconcileResult for consistency
-		r.LifecycleManager.SetPending(claim, ReasonClaimPending, "Initializing resource claim")
+		r.LifecycleManager.SetPending(claim, conditions.ReasonClaimPending, "Initializing resource claim")
 		// Update status after setting initial phase
 		if statusErr := r.Status().Update(ctx, claim); statusErr != nil {
 			fmt.Printf("DEBUG: Failed to update ResourceClaim status after adding finalizer %s/%s: %v\n", claim.Namespace, claim.Name, statusErr)
@@ -179,7 +180,7 @@ func (r *ProvisionerReconciler) handleProvisioning(ctx context.Context, claim *s
 	// Get strategy for this resource type
 	provisioningStrategy, err := r.StrategySelector.GetStrategy(claim.Spec.Type)
 	if err != nil {
-		r.LifecycleManager.SetFailed(claim, ReasonClaimFailed, fmt.Sprintf("No strategy available: %v", err))
+		r.LifecycleManager.SetFailed(claim, conditions.ReasonClaimFailed, fmt.Sprintf("No strategy available: %v", err))
 		r.Recorder.Event(claim, "Warning", EventReasonProvisionFailed, err.Error())
 		return ctrl.Result{}, fmt.Errorf("strategy not found: %w", err)
 	}
@@ -196,7 +197,7 @@ func (r *ProvisionerReconciler) handleProvisioning(ctx context.Context, claim *s
 		return r.handleFailedPhase(ctx, claim, provisioningStrategy)
 	default:
 		log.Info("Unknown phase, resetting to Pending", "phase", claim.Status.Phase)
-		r.LifecycleManager.SetPending(claim, ReasonClaimPending, "Unknown phase, resetting to Pending")
+		r.LifecycleManager.SetPending(claim, conditions.ReasonClaimPending, "Unknown phase, resetting to Pending")
 		return ctrl.Result{Requeue: true}, nil
 	}
 }
@@ -211,7 +212,7 @@ func (r *ProvisionerReconciler) handlePendingPhase(ctx context.Context, claim *s
 	outputs, err := provisioningStrategy.Provision(ctx, claim)
 	if err != nil {
 		log.Error(err, "Failed to provision resource")
-		r.LifecycleManager.SetFailed(claim, ReasonBindingFailed, fmt.Sprintf("Provisioning failed: %v", err))
+		r.LifecycleManager.SetFailed(claim, conditions.ReasonClaimFailed, fmt.Sprintf("Provisioning failed: %v", err))
 		r.Recorder.Event(claim, "Warning", EventReasonProvisionFailed, err.Error())
 		return ctrl.Result{}, err
 	}
@@ -219,7 +220,7 @@ func (r *ProvisionerReconciler) handlePendingPhase(ctx context.Context, claim *s
 	// Validate outputs
 	if err := r.OutputManager.ValidateOutputs(outputs); err != nil {
 		log.Error(err, "Invalid outputs from strategy")
-		r.LifecycleManager.SetFailed(claim, ReasonProjectionError, fmt.Sprintf("Invalid outputs: %v", err))
+		r.LifecycleManager.SetFailed(claim, conditions.ReasonProjectionError, fmt.Sprintf("Invalid outputs: %v", err))
 		return ctrl.Result{}, err
 	}
 
@@ -239,7 +240,7 @@ func (r *ProvisionerReconciler) handleClaimingPhase(ctx context.Context, claim *
 	phase, reason, message, err := provisioningStrategy.GetStatus(ctx, claim)
 	if err != nil {
 		log.Error(err, "Failed to get status from strategy")
-		r.LifecycleManager.SetFailed(claim, ReasonClaimFailed, fmt.Sprintf("Status check failed: %v", err))
+		r.LifecycleManager.SetFailed(claim, conditions.ReasonClaimFailed, fmt.Sprintf("Status check failed: %v", err))
 		return ctrl.Result{}, err
 	}
 
@@ -250,7 +251,7 @@ func (r *ProvisionerReconciler) handleClaimingPhase(ctx context.Context, claim *
 		outputs, err := provisioningStrategy.Provision(ctx, claim)
 		if err != nil {
 			log.Error(err, "Failed to get outputs from strategy")
-			r.LifecycleManager.SetFailed(claim, ReasonBindingFailed, fmt.Sprintf("Failed to get outputs: %v", err))
+			r.LifecycleManager.SetFailed(claim, conditions.ReasonClaimFailed, fmt.Sprintf("Failed to get outputs: %v", err))
 			r.Recorder.Event(claim, "Warning", EventReasonProvisionFailed, err.Error())
 			return ctrl.Result{}, err
 		}
@@ -258,7 +259,7 @@ func (r *ProvisionerReconciler) handleClaimingPhase(ctx context.Context, claim *
 		// Validate outputs
 		if err := r.OutputManager.ValidateOutputs(outputs); err != nil {
 			log.Error(err, "Invalid outputs from strategy")
-			r.LifecycleManager.SetFailed(claim, ReasonProjectionError, fmt.Sprintf("Invalid outputs: %v", err))
+			r.LifecycleManager.SetFailed(claim, conditions.ReasonProjectionError, fmt.Sprintf("Invalid outputs: %v", err))
 			return ctrl.Result{}, err
 		}
 
@@ -316,7 +317,7 @@ func (r *ProvisionerReconciler) handleFailedPhase(ctx context.Context, claim *sc
 	// If resource is now available, retry provisioning
 	if phase == scorev1b1.ResourceClaimPhaseBound {
 		log.Info("Resource recovered, retrying provisioning")
-		r.LifecycleManager.SetClaiming(claim, ReasonBindingPending, "Retrying provisioning after recovery")
+		r.LifecycleManager.SetClaiming(claim, conditions.ReasonClaiming, "Retrying provisioning after recovery")
 		return ctrl.Result{Requeue: true}, nil
 	}
 
