@@ -41,6 +41,8 @@ rules:
   - workloadplans/status
   verbs:
   - get
+  - update
+  - patch
 - apiGroups:
   - score.dev
   resources:

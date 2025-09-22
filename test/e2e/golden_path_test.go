@@ -41,7 +41,14 @@ spec:
       targetPort: 80
   containers:
     container-id:
-      image: busybox
+      image: nginx:alpine
+      resources:
+        requests:
+          cpu: "100m"
+          memory: "64Mi"
+        limits:
+          cpu: "200m"
+          memory: "128Mi"
       variables:
         CONNECTION_STRING: >-
           postgresql://$${resources.db.username}:$${resources.db.password}@$${resources.db.host}:$${resources.db.port}
@@ -151,6 +158,18 @@ spec:
 			return err == nil
 		}, time.Minute, time.Second).Should(BeTrue())
 
+		By("Waiting for Deployment to be ready")
+		Eventually(func() bool {
+			cmd := exec.Command("kubectl", "get", "deployment", "service-a", "-n", namespaceName,
+				"-o", "jsonpath={.status.readyReplicas}")
+			output, err := utils.Run(cmd)
+			if err != nil {
+				return false
+			}
+			readyReplicas := strings.TrimSpace(output)
+			return readyReplicas == "1"
+		}, time.Minute*2, time.Second*5).Should(BeTrue())
+
 		By("Verifying Workload Ready condition - the ultimate goal")
 		Eventually(func() string {
 			cmd := exec.Command("kubectl", "get", "workload", "service-a", "-n", namespaceName,
@@ -159,7 +178,29 @@ spec:
 			if err != nil {
 				return ""
 			}
-			return strings.TrimSpace(output)
+			readyStatus := strings.TrimSpace(output)
+
+			// Log current status if not ready for debugging
+			if readyStatus != "True" {
+				// Check individual conditions for troubleshooting
+				inputsValidCmd := exec.Command("kubectl", "get", "workload", "service-a", "-n", namespaceName,
+					"-o", "jsonpath={.status.conditions[?(@.type==\"InputsValid\")].status}")
+				inputsValidOutput, _ := utils.Run(inputsValidCmd)
+
+				claimsReadyCmd := exec.Command("kubectl", "get", "workload", "service-a", "-n", namespaceName,
+					"-o", "jsonpath={.status.conditions[?(@.type==\"ClaimsReady\")].status}")
+				claimsReadyOutput, _ := utils.Run(claimsReadyCmd)
+
+				runtimeReadyCmd := exec.Command("kubectl", "get", "workload", "service-a", "-n", namespaceName,
+					"-o", "jsonpath={.status.conditions[?(@.type==\"RuntimeReady\")].status}")
+				runtimeReadyOutput, _ := utils.Run(runtimeReadyCmd)
+
+				By(fmt.Sprintf("Workload conditions - Ready: %s, InputsValid: %s, ClaimsReady: %s, RuntimeReady: %s",
+					readyStatus, strings.TrimSpace(inputsValidOutput),
+					strings.TrimSpace(claimsReadyOutput), strings.TrimSpace(runtimeReadyOutput)))
+			}
+
+			return readyStatus
 		}, time.Minute*3, time.Second*5).Should(Equal("True"))
 	})
 })
