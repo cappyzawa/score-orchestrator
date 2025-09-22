@@ -223,6 +223,14 @@ For example, `imageFrom: { claimKey, outputKey }` may be used to bind an `output
 | `projection`                   | No      | env/volume mapping rules             |
 | `claims`                       | No      | desired dependency summaries         |
 
+**WorkloadPlan (status)**
+
+| Field        | Req     | Notes                              |
+| ------------ | ------- | ---------------------------------- |
+| `phase`      | **Yes** | runtime execution phase            |
+| `conditions` | **Yes** | Kubernetes-style condition array   |
+| `endpoint`   | No      | runtime-provided service endpoint  |
+
 ### Spec (conceptual)
 - **`workloadRef.name`** and **`observedWorkloadGeneration`**
 - **`runtimeClass`**: abstract runtime class (e.g., `kubernetes`, `ecs`, `nomad`)
@@ -283,8 +291,8 @@ Affected fields:
 - **Status authorship (Single-writer principle):**  
   - `Workload.status`: written **only** by the Orchestrator.
   - `ResourceClaim.status`: written **only** by Provisioner implementations.
-  - `WorkloadPlan`: no `.status`. Runtime controllers **must not** write to `Workload.status`;
-    they publish detailed diagnostics to their **own** internal resources.
+  - `WorkloadPlan.status`: written **only** by Runtime Controllers. Runtime controllers **must not** write to `Workload.status`;
+    they publish detailed diagnostics to `WorkloadPlan.status`.
   
   See `docs/spec/rbac.md` for recommended RBAC roles.
 - **Owner references:** `ResourceClaim` and `WorkloadPlan` carry OwnerRef to their `Workload` for cascading GC.

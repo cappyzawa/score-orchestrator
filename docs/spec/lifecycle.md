@@ -125,7 +125,7 @@ The Orchestrator sets `ClaimsReady=True` when:
 
 ### Runtime materialization lifecycle (internal)
 
-> These phases are tracked by **runtime-internal resources**; `WorkloadPlan` has **no** `.status`.
+> These phases are tracked by **runtime-internal resources**; `WorkloadPlan.status` is managed by the Runtime Controller.
 
 ```
 Runtime (internal) Phase Transitions:
