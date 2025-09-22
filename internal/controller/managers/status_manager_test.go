@@ -337,8 +337,8 @@ var _ = Describe("StatusManager", func() {
 				// Check that RuntimeReady condition was set
 				runtimeCondition := conditions.GetCondition(testWorkload.Status.Conditions, conditions.ConditionRuntimeReady)
 				Expect(runtimeCondition).ToNot(BeNil())
-				Expect(runtimeCondition.Status).To(Equal(metav1.ConditionFalse)) // MVP: always false when plan exists
-				Expect(runtimeCondition.Reason).To(Equal("RuntimeProvisioning"))
+				Expect(runtimeCondition.Status).To(Equal(metav1.ConditionFalse)) // Always false when plan exists but status is empty
+				Expect(runtimeCondition.Reason).To(Equal("RuntimeSelecting"))
 
 				// Check that Ready condition was computed
 				readyCondition := conditions.GetCondition(testWorkload.Status.Conditions, conditions.ConditionReady)
@@ -437,11 +437,84 @@ var _ = Describe("StatusManager", func() {
 				condition := conditions.GetCondition(testWorkload.Status.Conditions, conditions.ConditionRuntimeReady)
 				Expect(condition).ToNot(BeNil())
 				Expect(condition.Status).To(Equal(metav1.ConditionFalse))
-				Expect(condition.Reason).To(Equal("RuntimeProvisioning"))
+				Expect(condition.Reason).To(Equal("RuntimeSelecting"))
 
 				// Check endpoint was set
 				Expect(testWorkload.Status.Endpoint).ToNot(BeNil())
 				Expect(*testWorkload.Status.Endpoint).To(ContainSubstring("test-workload.test-ns.svc.cluster.local"))
+			})
+
+			It("should set runtime status based on WorkloadPlan.Status.Phase", func() {
+				fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+				mockRecorder := &mockEventRecorder{}
+				endpointDeriver := endpoint.NewEndpointDeriver(fakeClient)
+
+				sm := NewStatusManager(fakeClient, scheme, mockRecorder, endpointDeriver)
+
+				testCases := []struct {
+					phase           scorev1b1.WorkloadPlanPhase
+					message         string
+					expectedStatus  metav1.ConditionStatus
+					expectedReason  string
+					expectedMessage string
+				}{
+					{
+						phase:           scorev1b1.WorkloadPlanPhaseReady,
+						message:         "",
+						expectedStatus:  metav1.ConditionTrue,
+						expectedReason:  "Succeeded",
+						expectedMessage: "Runtime provisioned successfully",
+					},
+					{
+						phase:           scorev1b1.WorkloadPlanPhaseFailed,
+						message:         "Deployment failed",
+						expectedStatus:  metav1.ConditionFalse,
+						expectedReason:  "RuntimeDegraded",
+						expectedMessage: "Deployment failed",
+					},
+					{
+						phase:           scorev1b1.WorkloadPlanPhaseProvisioning,
+						message:         "Creating deployment",
+						expectedStatus:  metav1.ConditionFalse,
+						expectedReason:  "RuntimeProvisioning",
+						expectedMessage: "Creating deployment",
+					},
+					{
+						phase:           scorev1b1.WorkloadPlanPhasePending,
+						message:         "",
+						expectedStatus:  metav1.ConditionFalse,
+						expectedReason:  "RuntimeSelecting",
+						expectedMessage: "Runtime provisioning pending",
+					},
+				}
+
+				for _, tc := range testCases {
+					plan := &scorev1b1.WorkloadPlan{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "test-workload",
+							Namespace: "test-ns",
+						},
+						Spec: scorev1b1.WorkloadPlanSpec{
+							RuntimeClass: "kubernetes",
+						},
+						Status: scorev1b1.WorkloadPlanStatus{
+							Phase:   tc.phase,
+							Message: tc.message,
+						},
+					}
+
+					// Reset workload conditions
+					testWorkload.Status.Conditions = []metav1.Condition{}
+
+					sm.updateRuntimeStatusFromPlan(context.Background(), testWorkload, plan)
+
+					// Check RuntimeReady condition
+					condition := conditions.GetCondition(testWorkload.Status.Conditions, conditions.ConditionRuntimeReady)
+					Expect(condition).ToNot(BeNil(), "Phase: %s", tc.phase)
+					Expect(condition.Status).To(Equal(tc.expectedStatus), "Phase: %s", tc.phase)
+					Expect(condition.Reason).To(Equal(tc.expectedReason), "Phase: %s", tc.phase)
+					Expect(condition.Message).To(Equal(tc.expectedMessage), "Phase: %s", tc.phase)
+				}
 			})
 		})
 	})

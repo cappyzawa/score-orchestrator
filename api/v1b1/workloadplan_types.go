@@ -23,16 +23,19 @@ import (
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced,shortName=wplan
+// +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="PHASE",type="string",JSONPath=".status.phase"
 // +kubebuilder:printcolumn:name="RUNTIME",type="string",JSONPath=".spec.runtimeClass"
 // +kubebuilder:printcolumn:name="WORKLOAD",type="string",JSONPath=".spec.workloadRef.name"
 // +kubebuilder:printcolumn:name="AGE",type="date",JSONPath=".metadata.creationTimestamp"
 
 // WorkloadPlan is an internal contract from Orchestrator to the Runtime controller.
-// It must not be user-visible via RBAC; status is intentionally omitted.
+// It must not be user-visible via RBAC.
 type WorkloadPlan struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-	Spec              WorkloadPlanSpec `json:"spec"`
+	Spec              WorkloadPlanSpec   `json:"spec"`
+	Status            WorkloadPlanStatus `json:"status,omitempty"`
 }
 
 // WorkloadPlanWorkloadRef identifies the Workload this plan was derived from.
@@ -112,6 +115,38 @@ type WorkloadPlanSpec struct {
 	Projection WorkloadProjection `json:"projection,omitempty"`
 	// Claims declares resource requirements to be materialized by the runtime.
 	Claims []PlanClaim `json:"claims,omitempty"`
+}
+
+// WorkloadPlanPhase represents the current phase of WorkloadPlan runtime provisioning.
+// +kubebuilder:validation:Enum=Pending;Provisioning;Ready;Failed
+type WorkloadPlanPhase string
+
+const (
+	// WorkloadPlanPhasePending indicates the plan is waiting to be processed
+	WorkloadPlanPhasePending WorkloadPlanPhase = "Pending"
+	// WorkloadPlanPhaseProvisioning indicates runtime resources are being created
+	WorkloadPlanPhaseProvisioning WorkloadPlanPhase = "Provisioning"
+	// WorkloadPlanPhaseReady indicates runtime resources are ready
+	WorkloadPlanPhaseReady WorkloadPlanPhase = "Ready"
+	// WorkloadPlanPhaseFailed indicates runtime provisioning has failed
+	WorkloadPlanPhaseFailed WorkloadPlanPhase = "Failed"
+)
+
+// WorkloadPlanStatus represents the observed state of a WorkloadPlan.
+type WorkloadPlanStatus struct {
+	// Phase indicates the current state of the runtime provisioning.
+	// +optional
+	Phase WorkloadPlanPhase `json:"phase,omitempty"`
+
+	// Conditions represent the current state of the WorkloadPlan.
+	// +listType=map
+	// +listMapKey=type
+	// +optional
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// Message provides human-readable status information.
+	// +optional
+	Message string `json:"message,omitempty"`
 }
 
 // +kubebuilder:object:root=true
