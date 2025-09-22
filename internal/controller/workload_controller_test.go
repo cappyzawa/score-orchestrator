@@ -82,13 +82,13 @@ var _ = Describe("Workload Controller", func() {
 				return k8sClient.Get(context.Background(), client.ObjectKey{Name: testNS.Name}, &corev1.Namespace{})
 			}).Should(Succeed())
 
-			// Create kbinit-system namespace if it doesn't exist
-			kbinitSystemNS := &corev1.Namespace{
+			// Create score-system namespace if it doesn't exist
+			scoreSystemNS := &corev1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "kbinit-system",
+					Name: "score-system",
 				},
 			}
-			if err := k8sClient.Create(context.Background(), kbinitSystemNS); err != nil && !apierrors.IsAlreadyExists(err) {
+			if err := k8sClient.Create(context.Background(), scoreSystemNS); err != nil && !apierrors.IsAlreadyExists(err) {
 				Expect(err).NotTo(HaveOccurred())
 			}
 
@@ -96,7 +96,7 @@ var _ = Describe("Workload Controller", func() {
 			orchestratorConfig := &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "orchestrator-config",
-					Namespace: "kbinit-system",
+					Namespace: "score-system",
 				},
 				Data: map[string]string{
 					"config.yaml": `
@@ -133,10 +133,11 @@ spec:
 			var err error
 			mgr, err = ctrl.NewManager(cfg, ctrl.Options{
 				Scheme: k8sClient.Scheme(),
-				// Cache scoped to this test's namespace only
+				// Cache scoped to this test's namespace and score-system
 				Cache: cache.Options{
 					DefaultNamespaces: map[string]cache.Config{
-						testNS.Name: {},
+						testNS.Name:    {},
+						"score-system": {},
 					},
 				},
 				Metrics: server.Options{
@@ -242,7 +243,7 @@ spec:
 			orchestratorConfig := &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "orchestrator-config",
-					Namespace: "kbinit-system",
+					Namespace: "score-system",
 				},
 			}
 			_ = k8sClient.Delete(context.Background(), orchestratorConfig)

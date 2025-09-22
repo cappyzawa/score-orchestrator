@@ -103,6 +103,10 @@ func (cm *ClaimManager) upsertResourceClaim(ctx context.Context, workload *score
 		log.Info("Creating new ResourceClaim")
 		// Create new claim
 		claim = &scorev1b1.ResourceClaim{
+			TypeMeta: metav1.TypeMeta{
+				APIVersion: "score.dev/v1b1",
+				Kind:       "ResourceClaim",
+			},
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      claimName,
 				Namespace: workload.Namespace,

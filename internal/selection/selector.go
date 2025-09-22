@@ -72,9 +72,12 @@ func (s *profileSelector) SelectBackend(ctx context.Context, workload *scorev1b1
 		return nil, fmt.Errorf("profile selection failed: %w", err)
 	}
 
+	fmt.Printf("DEBUG: Selected profile: %s\n", profileName)
+
 	// Find the selected profile
 	var selectedProfile *scorev1b1.ProfileSpec
 	for _, profile := range s.config.Spec.Profiles {
+		fmt.Printf("DEBUG: Available profile: %s\n", profile.Name)
 		if profile.Name == profileName {
 			selectedProfile = &profile
 			break
@@ -85,8 +88,12 @@ func (s *profileSelector) SelectBackend(ctx context.Context, workload *scorev1b1
 		return nil, fmt.Errorf("profile %q not found in configuration", profileName)
 	}
 
+	fmt.Printf("DEBUG: Found profile %s with %d backends\n", selectedProfile.Name, len(selectedProfile.Backends))
+
 	// 2. Backend Filtering
 	candidates := s.filterBackends(workload, selectedProfile.Backends)
+
+	fmt.Printf("DEBUG: After filtering: %d candidates\n", len(candidates))
 
 	if len(candidates) == 0 {
 		return nil, fmt.Errorf("no suitable backend candidates found for profile %q", profileName)
@@ -210,23 +217,34 @@ func (s *profileSelector) filterBackends(workload *scorev1b1.Workload, backends 
 		workloadLabels = make(map[string]string)
 	}
 
+	// Get workload features for debugging
+	workloadFeatures := s.getWorkloadFeatures(workload)
+	fmt.Printf("DEBUG: Workload features: %v\n", workloadFeatures)
+
 	for _, backend := range backends {
+		fmt.Printf("DEBUG: Checking backend %s\n", backend.BackendId)
+
 		// Apply backend selectors using only workload labels (skip if no constraints)
 		if backend.Constraints != nil && !s.backendSelectorsMatch(backend.Constraints.Selectors, workloadLabels) {
+			fmt.Printf("DEBUG: Backend %s rejected by selectors\n", backend.BackendId)
 			continue
 		}
 
 		// Validate feature requirements (skip if no constraints)
 		if backend.Constraints != nil && !s.validateFeatureRequirements(workload, backend.Constraints.Features) {
+			fmt.Printf("DEBUG: Backend %s rejected by features. Required: %v, Available: %v\n",
+				backend.BackendId, backend.Constraints.Features, workloadFeatures)
 			continue
 		}
 
 		// Check resource constraints (skip if no constraints)
 		if backend.Constraints != nil && backend.Constraints.Resources != nil && !s.validateResourceConstraints(workload, *backend.Constraints.Resources) {
+			fmt.Printf("DEBUG: Backend %s rejected by resource constraints\n", backend.BackendId)
 			continue
 		}
 
 		// Backend passes all filters
+		fmt.Printf("DEBUG: Backend %s accepted\n", backend.BackendId)
 		candidates = append(candidates, backend)
 	}
 
@@ -274,9 +292,13 @@ func (s *profileSelector) validateResourceConstraints(workload *scorev1b1.Worklo
 	// Extract total resource requirements from all containers
 	totalCPU, totalMemory, totalStorage := s.calculateWorkloadResources(workload)
 
+	fmt.Printf("DEBUG: Resource validation - totalCPU: %s, totalMemory: %s, totalStorage: %s\n", totalCPU, totalMemory, totalStorage)
+	fmt.Printf("DEBUG: Constraints - CPU: %s, Memory: %s, Storage: %s\n", constraints.CPU, constraints.Memory, constraints.Storage)
+
 	// Validate CPU constraints
 	if constraints.CPU != "" {
 		if !s.validateQuantityConstraint(totalCPU, constraints.CPU) {
+			fmt.Printf("DEBUG: CPU constraint validation failed: %s does not match %s\n", totalCPU, constraints.CPU)
 			return false
 		}
 	}
@@ -284,6 +306,7 @@ func (s *profileSelector) validateResourceConstraints(workload *scorev1b1.Worklo
 	// Validate Memory constraints
 	if constraints.Memory != "" {
 		if !s.validateQuantityConstraint(totalMemory, constraints.Memory) {
+			fmt.Printf("DEBUG: Memory constraint validation failed: %s does not match %s\n", totalMemory, constraints.Memory)
 			return false
 		}
 	}
@@ -291,10 +314,12 @@ func (s *profileSelector) validateResourceConstraints(workload *scorev1b1.Worklo
 	// Validate Storage constraints
 	if constraints.Storage != "" {
 		if !s.validateQuantityConstraint(totalStorage, constraints.Storage) {
+			fmt.Printf("DEBUG: Storage constraint validation failed: %s does not match %s\n", totalStorage, constraints.Storage)
 			return false
 		}
 	}
 
+	fmt.Printf("DEBUG: All resource constraints passed\n")
 	return true
 }
 

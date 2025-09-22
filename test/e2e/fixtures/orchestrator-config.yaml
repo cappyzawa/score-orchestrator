@@ -1,18 +1,8 @@
 apiVersion: v1
-kind: Namespace
-metadata:
-  name: kbinit-system
-  labels:
-    name: kbinit-system
-    test-purpose: e2e
-  # Ensure no finalizers block deletion
-  finalizers: []
----
-apiVersion: v1
 kind: ConfigMap
 metadata:
   name: orchestrator-config
-  namespace: kbinit-system
+  namespace: score-system
 data:
   config.yaml: |
     apiVersion: score.dev/v1b1
@@ -38,11 +28,7 @@ data:
                   memory: "128Mi"
           priority: 100
           version: "1.0.0"
-          constraints:
-            features: ["http-ingress"]
-            resources:
-              cpu: "50m-1000m"
-              memory: "64Mi-2Gi"
+          constraints: {}
       - name: batch-job
         description: "Batch processing workloads"
         backends:

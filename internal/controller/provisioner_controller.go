@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
@@ -16,6 +17,9 @@ import (
 	"github.com/cappyzawa/score-orchestrator/internal/config"
 	"github.com/cappyzawa/score-orchestrator/internal/provisioner"
 	"github.com/cappyzawa/score-orchestrator/internal/provisioner/strategy"
+	"github.com/cappyzawa/score-orchestrator/internal/provisioner/strategy/postgres"
+	"github.com/cappyzawa/score-orchestrator/internal/provisioner/strategy/redis"
+	"github.com/cappyzawa/score-orchestrator/internal/provisioner/strategy/secret"
 )
 
 // Event constants for ProvisionerReconciler
@@ -61,51 +65,80 @@ func NewProvisionerReconciler(
 
 // SetupWithManager sets up the controller with the Manager
 func (r *ProvisionerReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	fmt.Printf("DEBUG: ProvisionerReconciler.SetupWithManager called\n")
+
 	// Load supported types from environment or config
+	fmt.Printf("DEBUG: Loading supported types\n")
 	r.loadSupportedTypes()
 
 	// Load provisioning configuration
+	fmt.Printf("DEBUG: Loading provisioning configuration\n")
 	r.loadProvisioningConfig()
 
-	return ctrl.NewControllerManagedBy(mgr).
+	// Register concrete strategies
+	fmt.Printf("DEBUG: Registering strategies\n")
+	r.registerStrategies()
+
+	fmt.Printf("DEBUG: Setting up controller with manager\n")
+	controller := ctrl.NewControllerManagedBy(mgr).
 		For(&scorev1b1.ResourceClaim{}).
-		WithEventFilter(predicate.NewPredicateFuncs(r.filterSupportedTypes)).
-		Complete(r)
+		WithEventFilter(predicate.NewPredicateFuncs(r.filterSupportedTypes))
+
+	fmt.Printf("DEBUG: Controller builder created, calling Complete\n")
+	err := controller.Complete(r)
+	if err != nil {
+		fmt.Printf("DEBUG: Controller.Complete failed: %v\n", err)
+		return err
+	}
+
+	fmt.Printf("DEBUG: Provisioner controller setup completed successfully\n")
+	return nil
 }
 
-// Reconcile handles ResourceClaim reconciliation
 // +kubebuilder:rbac:groups=score.dev,resources=resourceclaims,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups=score.dev,resources=resourceclaims/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+
+// Reconcile handles ResourceClaim reconciliation
 func (r *ProvisionerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
+	fmt.Printf("DEBUG: Provisioner.Reconcile called for %s/%s\n", req.Namespace, req.Name)
 
 	// Fetch the ResourceClaim
 	claim := &scorev1b1.ResourceClaim{}
 	if err := r.Get(ctx, req.NamespacedName, claim); err != nil {
+		fmt.Printf("DEBUG: Failed to fetch ResourceClaim %s/%s: %v\n", req.Namespace, req.Name, err)
 		log.Error(err, "Failed to fetch ResourceClaim")
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	fmt.Printf("DEBUG: Found ResourceClaim %s/%s with type=%s, phase=%s\n",
+		claim.Namespace, claim.Name, claim.Spec.Type, claim.Status.Phase)
+
 	// Check if we should reconcile this claim
 	if !r.LifecycleManager.ShouldReconcile(claim) {
+		fmt.Printf("DEBUG: Skipping reconciliation for %s/%s, phase=%s\n", claim.Namespace, claim.Name, claim.Status.Phase)
 		log.V(1).Info("Skipping reconciliation", "phase", claim.Status.Phase)
 		return ctrl.Result{}, nil
 	}
 
+	fmt.Printf("DEBUG: Proceeding with reconciliation for %s/%s\n", claim.Namespace, claim.Name)
 	log.Info("Reconciling ResourceClaim", "type", claim.Spec.Type, "phase", claim.Status.Phase)
 
 	// Handle deletion
 	if r.LifecycleManager.IsBeingDeleted(claim) {
+		fmt.Printf("DEBUG: ResourceClaim %s/%s is being deleted\n", claim.Namespace, claim.Name)
 		return r.handleDeletion(ctx, claim)
 	}
 
 	// Ensure finalizer is present
 	if !r.LifecycleManager.HasFinalizer(claim) {
+		fmt.Printf("DEBUG: Adding finalizer to ResourceClaim %s/%s\n", claim.Namespace, claim.Name)
 		r.LifecycleManager.AddFinalizer(claim)
 		if err := r.Update(ctx, claim); err != nil {
+			fmt.Printf("DEBUG: Failed to add finalizer to %s/%s: %v\n", claim.Namespace, claim.Name, err)
 			log.Error(err, "Failed to add finalizer")
 			return ctrl.Result{}, err
 		}
@@ -114,23 +147,28 @@ func (r *ProvisionerReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		r.LifecycleManager.SetPending(claim, ReasonClaimPending, "Initializing resource claim")
 		// Update status after setting initial phase
 		if statusErr := r.Status().Update(ctx, claim); statusErr != nil {
+			fmt.Printf("DEBUG: Failed to update ResourceClaim status after adding finalizer %s/%s: %v\n", claim.Namespace, claim.Name, statusErr)
 			log.Error(statusErr, "Failed to update ResourceClaim status after adding finalizer")
 			return ctrl.Result{}, statusErr
 		}
+		fmt.Printf("DEBUG: Successfully added finalizer and set initial phase for %s/%s\n", claim.Namespace, claim.Name)
 		return r.LifecycleManager.GetReconcileResult(ctx, claim, nil)
 	}
 
+	fmt.Printf("DEBUG: Handling provisioning for ResourceClaim %s/%s\n", claim.Namespace, claim.Name)
 	// Handle provisioning
 	_, err := r.handleProvisioning(ctx, claim)
 
 	// Update status
 	if statusErr := r.Status().Update(ctx, claim); statusErr != nil {
+		fmt.Printf("DEBUG: Failed to update ResourceClaim status %s/%s: %v\n", claim.Namespace, claim.Name, statusErr)
 		log.Error(statusErr, "Failed to update ResourceClaim status")
 		if err == nil {
 			err = statusErr
 		}
 	}
 
+	fmt.Printf("DEBUG: Provisioner.Reconcile completed for %s/%s, err=%v\n", claim.Namespace, claim.Name, err)
 	return r.LifecycleManager.GetReconcileResult(ctx, claim, err)
 }
 
@@ -164,14 +202,33 @@ func (r *ProvisionerReconciler) handleProvisioning(ctx context.Context, claim *s
 }
 
 // handlePendingPhase handles the Pending phase
-func (r *ProvisionerReconciler) handlePendingPhase(ctx context.Context, claim *scorev1b1.ResourceClaim, _ strategy.Strategy) (ctrl.Result, error) {
+func (r *ProvisionerReconciler) handlePendingPhase(ctx context.Context, claim *scorev1b1.ResourceClaim, provisioningStrategy strategy.Strategy) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
 
 	log.Info("Starting provisioning", "type", claim.Spec.Type)
-	r.LifecycleManager.SetClaiming(claim, ReasonBindingPending, "Starting resource provisioning")
-	r.Recorder.Event(claim, "Normal", EventReasonProvisioning, "Starting resource provisioning")
 
-	return ctrl.Result{Requeue: true}, nil
+	// Call the Provision method to create the resource
+	outputs, err := provisioningStrategy.Provision(ctx, claim)
+	if err != nil {
+		log.Error(err, "Failed to provision resource")
+		r.LifecycleManager.SetFailed(claim, ReasonBindingFailed, fmt.Sprintf("Provisioning failed: %v", err))
+		r.Recorder.Event(claim, "Warning", EventReasonProvisionFailed, err.Error())
+		return ctrl.Result{}, err
+	}
+
+	// Validate outputs
+	if err := r.OutputManager.ValidateOutputs(outputs); err != nil {
+		log.Error(err, "Invalid outputs from strategy")
+		r.LifecycleManager.SetFailed(claim, ReasonProjectionError, fmt.Sprintf("Invalid outputs: %v", err))
+		return ctrl.Result{}, err
+	}
+
+	// Set to Bound phase with outputs
+	r.LifecycleManager.SetBound(claim, outputs)
+	r.Recorder.Event(claim, "Normal", EventReasonProvisioned, "Resource successfully provisioned")
+	log.Info("Resource provisioned successfully")
+
+	return ctrl.Result{}, nil
 }
 
 // handleClaimingPhase handles the Claiming phase
@@ -186,8 +243,10 @@ func (r *ProvisionerReconciler) handleClaimingPhase(ctx context.Context, claim *
 		return ctrl.Result{}, err
 	}
 
-	// If already bound, move to bound phase
+	// If already bound, get outputs and update status
 	if phase == scorev1b1.ResourceClaimPhaseBound {
+		// Since we're already bound, we need to get the outputs without re-provisioning
+		// This happens when the resource was created but the status wasn't updated yet
 		outputs, err := provisioningStrategy.Provision(ctx, claim)
 		if err != nil {
 			log.Error(err, "Failed to get outputs from strategy")
@@ -216,9 +275,9 @@ func (r *ProvisionerReconciler) handleClaimingPhase(ctx context.Context, claim *
 		return ctrl.Result{}, fmt.Errorf("provisioning failed: %s", message)
 	}
 
-	// Continue claiming
+	// Continue claiming - still in progress
 	log.V(1).Info("Provisioning in progress", "reason", reason, "message", message)
-	return ctrl.Result{Requeue: true}, nil
+	return ctrl.Result{RequeueAfter: time.Second * 10}, nil
 }
 
 // handleBoundPhase handles the Bound phase
@@ -305,17 +364,20 @@ func (r *ProvisionerReconciler) handleDeletion(ctx context.Context, claim *score
 func (r *ProvisionerReconciler) loadSupportedTypes() {
 	envTypes := os.Getenv("SUPPORTED_RESOURCE_TYPES")
 	if envTypes == "" {
-		// Default supported types for Phase 1 (no actual provisioning strategies yet)
-		envTypes = "test,mock"
+		// Default supported types including new concrete strategies
+		envTypes = "postgres,redis,secret,test,mock"
 	}
 
+	fmt.Printf("DEBUG: SUPPORTED_RESOURCE_TYPES env var: '%s'\n", envTypes)
 	types := strings.Split(envTypes, ",")
 	for _, t := range types {
 		t = strings.TrimSpace(t)
 		if t != "" {
 			r.supportedTypes[t] = true
+			fmt.Printf("DEBUG: Added supported type: '%s'\n", t)
 		}
 	}
+	fmt.Printf("DEBUG: Final supportedTypes map: %+v\n", r.supportedTypes)
 }
 
 // loadProvisioningConfig loads provisioning configuration from orchestrator config
@@ -323,6 +385,16 @@ func (r *ProvisionerReconciler) loadProvisioningConfig() {
 	// For Phase 1, we'll use a minimal configuration
 	// In later phases, this will load from OrchestratorConfig
 	configs := []strategy.ProvisioningConfig{
+		{
+			Type:     "postgres",
+			Strategy: "postgres",
+			Config:   map[string]any{},
+		},
+		{
+			Type:     "redis",
+			Strategy: "redis",
+			Config:   map[string]any{},
+		},
 		{
 			Type:     "test",
 			Strategy: "mock",
@@ -338,13 +410,31 @@ func (r *ProvisionerReconciler) loadProvisioningConfig() {
 	r.StrategySelector.LoadConfig(configs)
 }
 
+// registerStrategies registers concrete strategy implementations
+func (r *ProvisionerReconciler) registerStrategies() {
+	// Register Postgres strategy
+	postgresStrategy := postgres.NewPostgresStrategy(r.Client)
+	r.StrategySelector.RegisterStrategy(postgresStrategy)
+
+	// Register Redis strategy
+	redisStrategy := redis.NewRedisStrategy(r.Client)
+	r.StrategySelector.RegisterStrategy(redisStrategy)
+
+	// Register Secret strategy
+	secretStrategy := secret.NewSecretStrategy(r.Client)
+	r.StrategySelector.RegisterStrategy(secretStrategy)
+}
+
 // filterSupportedTypes filters ResourceClaims to only reconcile supported types
 func (r *ProvisionerReconciler) filterSupportedTypes(obj client.Object) bool {
 	claim, ok := obj.(*scorev1b1.ResourceClaim)
 	if !ok {
+		fmt.Printf("DEBUG: filterSupportedTypes - not a ResourceClaim: %T\n", obj)
 		return false
 	}
 
 	supported := r.supportedTypes[claim.Spec.Type]
+	fmt.Printf("DEBUG: filterSupportedTypes - ResourceClaim %s/%s type=%s, supported=%v, supportedTypes=%+v\n",
+		claim.Namespace, claim.Name, claim.Spec.Type, supported, r.supportedTypes)
 	return supported
 }

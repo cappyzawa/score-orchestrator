@@ -245,15 +245,19 @@ func main() {
 	}
 
 	// Setup Provisioner Controller
-	if err := controller.NewProvisionerReconciler(
+	setupLog.Info("Setting up Provisioner Controller")
+	provisioner := controller.NewProvisionerReconciler(
 		mgr.GetClient(),
 		mgr.GetScheme(),
 		mgr.GetEventRecorderFor("provisioner-controller"),
 		configLoader,
-	).SetupWithManager(mgr); err != nil {
+	)
+	setupLog.Info("Created Provisioner Reconciler, calling SetupWithManager")
+	if err := provisioner.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Provisioner")
 		os.Exit(1)
 	}
+	setupLog.Info("Provisioner Controller setup completed successfully")
 	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

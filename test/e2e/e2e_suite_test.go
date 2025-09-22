@@ -42,7 +42,9 @@ var (
 
 	// projectImage is the name of the image which will be build and loaded
 	// with the code source changes to be tested.
-	projectImage = "example.com/kbinit:v0.0.1"
+	projectImage = "example.com/kbinit:latest"
+	// runtimeImage is the name of the kubernetes-runtime controller image
+	runtimeImage = "kubernetes-runtime:latest"
 )
 
 // TestE2E runs the end-to-end (e2e) test suite for the project. These tests execute in an isolated,
@@ -61,11 +63,20 @@ var _ = BeforeSuite(func() {
 	_, err := utils.Run(cmd)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to build the manager(Operator) image")
 
+	By("building the kubernetes-runtime controller image")
+	cmd = exec.Command("make", "docker-build-runtime")
+	_, err = utils.Run(cmd)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to build the kubernetes-runtime controller image")
+
 	// TODO(user): If you want to change the e2e test vendor from Kind, ensure the image is
 	// built and available before running the tests. Also, remove the following block.
 	By("loading the manager(Operator) image on Kind")
 	err = utils.LoadImageToKindClusterWithName(projectImage)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to load the manager(Operator) image into Kind")
+
+	By("loading the kubernetes-runtime controller image on Kind")
+	err = utils.LoadImageToKindClusterWithName(runtimeImage)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to load the kubernetes-runtime controller image into Kind")
 
 	// The tests-e2e are intended to run on a temporary cluster that is created and destroyed for testing.
 	// To prevent errors when tests run in environments with CertManager already installed,
@@ -88,6 +99,12 @@ var _ = BeforeSuite(func() {
 	_, err = utils.Run(cmd)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to deploy the manager to the cluster")
 
+	// Deploy the kubernetes-runtime controller to the cluster
+	By("deploying the kubernetes-runtime controller to the cluster")
+	cmd = exec.Command("make", "deploy-runtime", fmt.Sprintf("RUNTIME_IMG=%s", runtimeImage))
+	_, err = utils.Run(cmd)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to deploy the kubernetes-runtime controller to the cluster")
+
 	// Deploy OrchestratorConfig for E2E tests
 	By("deploying test OrchestratorConfig")
 	cmd = exec.Command("kubectl", "apply", "-f", "test/e2e/fixtures/orchestrator-config.yaml")
@@ -96,7 +113,7 @@ var _ = BeforeSuite(func() {
 
 	// Wait for namespace to be ready
 	By("waiting for test namespace to be ready")
-	cmd = exec.Command("kubectl", "wait", "--for=condition=Ready", "namespace/kbinit-system", "--timeout=30s")
+	cmd = exec.Command("kubectl", "wait", "--for=condition=Ready", "namespace/score-system", "--timeout=30s")
 	if _, err := utils.Run(cmd); err != nil {
 		_, _ = fmt.Fprintf(GinkgoWriter, "Warning: namespace may not be fully ready: %v\n", err)
 	}
@@ -105,13 +122,20 @@ var _ = BeforeSuite(func() {
 var _ = AfterSuite(func() {
 	// Clean up test OrchestratorConfig with timeout and force deletion
 	By("cleaning up test OrchestratorConfig")
-	cmd := exec.Command("kubectl", "delete", "-f", "test/e2e/fixtures/orchestrator-config.yaml", 
-		"--ignore-not-found=true", 
+	cmd := exec.Command("kubectl", "delete", "-f", "test/e2e/fixtures/orchestrator-config.yaml",
+		"--ignore-not-found=true",
 		"--timeout=30s",
-		"--force", 
+		"--force",
 		"--grace-period=0")
 	if _, err := utils.Run(cmd); err != nil {
 		_, _ = fmt.Fprintf(GinkgoWriter, "Warning: failed to clean up OrchestratorConfig: %v\n", err)
+	}
+
+	// Undeploy the kubernetes-runtime controller from the cluster
+	By("undeploying the kubernetes-runtime controller from the cluster")
+	cmd = exec.Command("make", "undeploy-runtime")
+	if _, err := utils.Run(cmd); err != nil {
+		_, _ = fmt.Fprintf(GinkgoWriter, "Warning: failed to undeploy kubernetes-runtime controller: %v\n", err)
 	}
 
 	// Undeploy the manager from the cluster

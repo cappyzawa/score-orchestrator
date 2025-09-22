@@ -109,24 +109,27 @@ var _ = Describe("ProvisionerController", func() {
 			Expect(updatedClaim.Finalizers).To(ContainElement(ResourceClaimFinalizer))
 		})
 
-		It("Should transition from Pending to Claiming", func() {
+		It("Should transition from Pending to Bound with successful provisioning", func() {
 			createResourceClaim("test-claim-pending")
 			By("Creating a ResourceClaim with finalizer")
 			resourceClaim.Finalizers = []string{ResourceClaimFinalizer}
 			Expect(k8sClient.Create(ctx, resourceClaim)).To(Succeed())
 
-			By("Configuring mock strategy to return Pending status")
-			mockStrategy.SetStatus(scorev1b1.ResourceClaimPhasePending, ReasonClaimPending, "Resource is pending")
+			By("Configuring mock strategy to return successful outputs")
+			mockStrategy.SetStatus(scorev1b1.ResourceClaimPhaseBound, ReasonSucceeded, "Resource provisioned")
+			mockStrategy.SetOutputs(&scorev1b1.ResourceClaimOutputs{
+				URI: StringPtr("test://localhost:1234"),
+			})
 
 			By("Reconciling the ResourceClaim")
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: namespaceName})
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Checking that phase transitioned to Claiming")
+			By("Checking that phase transitioned to Bound")
 			updatedClaim := &scorev1b1.ResourceClaim{}
 			Expect(k8sClient.Get(ctx, namespaceName, updatedClaim)).To(Succeed())
-			Expect(updatedClaim.Status.Phase).To(Equal(scorev1b1.ResourceClaimPhaseClaiming))
-			Expect(updatedClaim.Status.OutputsAvailable).To(BeFalse())
+			Expect(updatedClaim.Status.Phase).To(Equal(scorev1b1.ResourceClaimPhaseBound))
+			Expect(updatedClaim.Status.OutputsAvailable).To(BeTrue())
 		})
 
 		It("Should transition to Bound with valid outputs", func() {

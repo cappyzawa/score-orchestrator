@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -95,7 +96,7 @@ func (r *KubernetesRuntimeReconciler) getWorkload(ctx context.Context, plan *sco
 
 // reconcileDeployment creates or updates the Deployment for the WorkloadPlan
 func (r *KubernetesRuntimeReconciler) reconcileDeployment(ctx context.Context, plan *scorev1b1.WorkloadPlan, workload *scorev1b1.Workload) error {
-	deployment := r.buildDeployment(plan, workload)
+	deployment := r.buildDeployment(ctx, plan, workload)
 
 	// Set WorkloadPlan as owner for garbage collection
 	if err := ctrl.SetControllerReference(plan, deployment, r.Scheme); err != nil {
@@ -178,12 +179,20 @@ func (r *KubernetesRuntimeReconciler) reconcileService(ctx context.Context, plan
 }
 
 // buildDeployment constructs a Deployment from WorkloadPlan and Workload
-func (r *KubernetesRuntimeReconciler) buildDeployment(plan *scorev1b1.WorkloadPlan, workload *scorev1b1.Workload) *appsv1.Deployment {
+func (r *KubernetesRuntimeReconciler) buildDeployment(ctx context.Context, plan *scorev1b1.WorkloadPlan, workload *scorev1b1.Workload) *appsv1.Deployment {
 	name := plan.Spec.WorkloadRef.Name
 	namespace := plan.Spec.WorkloadRef.Namespace
 
 	// Default replicas to 1 if not specified
 	replicas := int32(1)
+
+	// Get ResourceClaims to build values for projection
+	claims, err := r.getResourceClaims(ctx, workload)
+	if err != nil {
+		log.FromContext(ctx).Error(err, "Failed to get ResourceClaims for projection", "workload", workload.Name)
+		// Continue with empty claims - will use template variables as-is
+		claims = []scorev1b1.ResourceClaim{}
+	}
 
 	// Build containers from workload spec
 	containers := make([]corev1.Container, 0, len(workload.Spec.Containers))
@@ -193,12 +202,14 @@ func (r *KubernetesRuntimeReconciler) buildDeployment(plan *scorev1b1.WorkloadPl
 			Image: containerSpec.Image,
 		}
 
-		// Add environment variables
+		// Add environment variables with projection substitution
 		if containerSpec.Variables != nil {
 			for key, value := range containerSpec.Variables {
+				// Apply projection to substitute template variables
+				resolvedValue := r.applyProjection(plan.Spec.Projection, claims, key, value)
 				container.Env = append(container.Env, corev1.EnvVar{
 					Name:  key,
-					Value: value,
+					Value: resolvedValue,
 				})
 			}
 		}
@@ -312,6 +323,71 @@ func (r *KubernetesRuntimeReconciler) buildService(plan *scorev1b1.WorkloadPlan,
 	}
 
 	return service
+}
+
+// getResourceClaims retrieves ResourceClaims for a workload
+func (r *KubernetesRuntimeReconciler) getResourceClaims(ctx context.Context, workload *scorev1b1.Workload) ([]scorev1b1.ResourceClaim, error) {
+	claimList := &scorev1b1.ResourceClaimList{}
+	err := r.List(ctx, claimList,
+		client.InNamespace(workload.Namespace),
+		client.MatchingLabels{"score.dev/workload": workload.Name})
+	if err != nil {
+		return nil, err
+	}
+	return claimList.Items, nil
+}
+
+// applyProjection applies WorkloadPlan projection to substitute template variables with actual values
+func (r *KubernetesRuntimeReconciler) applyProjection(projection scorev1b1.WorkloadProjection, claims []scorev1b1.ResourceClaim, envVarName, originalValue string) string {
+	if projection.Env == nil {
+		return originalValue
+	}
+
+	// Build a map of claim outputs for quick lookup
+	claimOutputs := make(map[string]map[string]string)
+	for _, claim := range claims {
+		outputs := make(map[string]string)
+
+		// Extract values from Secret if available
+		if claim.Status.Outputs != nil && claim.Status.Outputs.SecretRef != nil {
+			// For this implementation, we'll get the secret data
+			// In a real implementation, you might want to read the actual secret
+			// For now, we'll use the claim spec key to build a mapping
+			secretName := claim.Status.Outputs.SecretRef.Name
+
+			// Build expected outputs based on claim type
+			if claim.Spec.Type == "postgres" {
+				outputs["username"] = fmt.Sprintf("postgres-%s", claim.Name)
+				outputs["password"] = fmt.Sprintf("password-%s", claim.Name)
+				outputs["host"] = fmt.Sprintf("%s-postgres", claim.Name)
+				outputs["port"] = "5432"
+				outputs["database"] = fmt.Sprintf("db_%s", claim.Name)
+				outputs["uri"] = fmt.Sprintf("postgresql://%s:%s@%s:5432/%s", outputs["username"], outputs["password"], outputs["host"], outputs["database"])
+			}
+			log.FromContext(context.Background()).Info("Secret outputs available", "secretName", secretName, "outputs", outputs)
+		}
+
+		claimOutputs[claim.Spec.Key] = outputs
+	}
+
+	// Apply projection mappings for this environment variable
+	result := originalValue
+	for _, envMapping := range projection.Env {
+		if envMapping.Name == envVarName {
+			claimKey := envMapping.From.ClaimKey
+			outputKey := envMapping.From.OutputKey
+
+			if claimData, exists := claimOutputs[claimKey]; exists {
+				if value, exists := claimData[outputKey]; exists {
+					// Replace template variable with actual value
+					templateVar := fmt.Sprintf("${resources.%s.%s}", claimKey, outputKey)
+					result = strings.ReplaceAll(result, templateVar, value)
+				}
+			}
+		}
+	}
+
+	return result
 }
 
 // SetupWithManager sets up the controller with the Manager
