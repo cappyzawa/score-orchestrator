@@ -36,6 +36,7 @@ const (
 	ReasonSpecInvalid         = "SpecInvalid"
 	ReasonPolicyViolation     = "PolicyViolation"
 	ReasonClaimPending        = "ClaimPending"
+	ReasonClaiming            = "Claiming"
 	ReasonClaimFailed         = "ClaimFailed"
 	ReasonProjectionError     = "ProjectionError"
 	ReasonRuntimeSelecting    = "RuntimeSelecting"

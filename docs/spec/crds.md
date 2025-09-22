@@ -99,11 +99,11 @@ Runtime selection and platform details are **not** part of this spec.
 - **`endpoint: string|null`** — canonical URL if available; else `null` (format: uri)
 - **`conditions[]`** — Kubernetes-style items with abstract reasons only  
   - **Types:** `Ready`, `ClaimsReady`, `RuntimeReady`, `InputsValid`
-  - **Reasons (fixed, abstract):**  
-    `Succeeded`, `SpecInvalid`, `PolicyViolation`,  
-    `ClaimPending`, `ClaimFailed`,  
-    `ProjectionError`,  
-    `RuntimeSelecting`, `RuntimeProvisioning`, `RuntimeDegraded`,  
+  - **Reasons (fixed, abstract):**
+    `Succeeded`, `SpecInvalid`, `PolicyViolation`,
+    `ClaimPending`, `Claiming`, `ClaimFailed`,
+    `ProjectionError`,
+    `RuntimeSelecting`, `RuntimeProvisioning`, `RuntimeDegraded`,
     `QuotaExceeded`, `PermissionDenied`, `NetworkUnavailable`
   - **Message:** one neutral sentence; **no runtime-specific nouns**.
 - **`claims[]`** — summary per dependency:  

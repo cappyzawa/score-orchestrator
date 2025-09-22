@@ -8,21 +8,11 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	scorev1b1 "github.com/cappyzawa/score-orchestrator/api/v1b1"
+	"github.com/cappyzawa/score-orchestrator/internal/conditions"
 )
 
 // ResourceClaim lifecycle constants
 const (
-	// Reasons for ResourceClaim status (abstract vocabulary from control-plane.md)
-	ReasonClaimPending       = "ClaimPending"
-	ReasonClaimFailed        = "ClaimFailed"
-	ReasonBindingPending     = "BindingPending"
-	ReasonBindingFailed      = "BindingFailed"
-	ReasonSucceeded          = "Succeeded"
-	ReasonQuotaExceeded      = "QuotaExceeded"
-	ReasonPermissionDenied   = "PermissionDenied"
-	ReasonNetworkUnavailable = "NetworkUnavailable"
-	ReasonProjectionError    = "ProjectionError"
-
 	// Finalizer for ResourceClaim cleanup
 	ResourceClaimFinalizer = "provisioner.score.dev/finalizer"
 )
@@ -73,7 +63,7 @@ func (lm *ResourceClaimLifecycleManager) SetBound(
 	claim *scorev1b1.ResourceClaim,
 	outputs *scorev1b1.ResourceClaimOutputs,
 ) {
-	lm.SetPhase(claim, scorev1b1.ResourceClaimPhaseBound, ReasonSucceeded, "Resource successfully provisioned")
+	lm.SetPhase(claim, scorev1b1.ResourceClaimPhaseBound, conditions.ReasonSucceeded, "Resource successfully provisioned")
 	claim.Status.Outputs = outputs
 	claim.Status.OutputsAvailable = true
 }
