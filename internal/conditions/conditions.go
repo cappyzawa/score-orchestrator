@@ -59,6 +59,7 @@ const (
 	MessageAllClaimsReady            = "All resource claims are ready"
 	MessageClaimsFailed              = "One or more resource claims have failed"
 	MessageNoClaimsFound             = "No resource claims found"
+	MessageProjectionError           = "One or more required outputs are not resolved."
 )
 
 // SetCondition updates a condition in the conditions slice
@@ -109,6 +110,33 @@ func GetCondition(conditions []metav1.Condition, conditionType string) *metav1.C
 		}
 	}
 	return nil
+}
+
+// ForProjectionError creates conditions for projection error state
+func ForProjectionError(message string) []ConditionUpdate {
+	return []ConditionUpdate{
+		{
+			Type:    ConditionRuntimeReady,
+			Status:  metav1.ConditionFalse,
+			Reason:  ReasonProjectionError,
+			Message: message,
+		},
+	}
+}
+
+// ConditionUpdate represents a condition update operation
+type ConditionUpdate struct {
+	Type    string
+	Status  metav1.ConditionStatus
+	Reason  string
+	Message string
+}
+
+// ApplyConditionUpdates applies multiple condition updates to a conditions slice
+func ApplyConditionUpdates(conditions *[]metav1.Condition, updates []ConditionUpdate) {
+	for _, update := range updates {
+		SetCondition(conditions, update.Type, update.Status, update.Reason, update.Message)
+	}
 }
 
 // ComputeReadyCondition determines the Ready condition based on other conditions

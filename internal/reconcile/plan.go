@@ -27,6 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	scorev1b1 "github.com/cappyzawa/score-orchestrator/api/v1b1"
+	"github.com/cappyzawa/score-orchestrator/internal/projection"
 	"github.com/cappyzawa/score-orchestrator/internal/selection"
 )
 
@@ -55,6 +56,14 @@ func UpsertWorkloadPlan(ctx context.Context, c client.Client, workload *scorev1b
 	resolvedValues, err := resolveAllPlaceholders(workload, claims)
 	if err != nil {
 		return fmt.Errorf("failed to resolve placeholders: %w", err)
+	}
+
+	// Check for unresolved placeholders before creating the plan
+	if hasUnresolved, parseErr := projection.HasUnresolvedPlaceholders(resolvedValues.Raw); hasUnresolved {
+		if parseErr != nil {
+			return fmt.Errorf("unresolved placeholders (parse error): %w", parseErr)
+		}
+		return fmt.Errorf("unresolved placeholders found in workload projection")
 	}
 
 	// Build the desired spec
