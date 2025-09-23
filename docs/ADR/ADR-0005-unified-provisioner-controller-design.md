@@ -110,7 +110,7 @@ Focus on implementing the fundamental Provisioner Controller that can watch and 
 
 #### Phase 1.2: ResourceClaim Status Management
 - [ ] Implement ResourceClaim status updates according to spec
-  - [ ] Support phase transitions: `Pending → Claiming → (Bound | Failed)`
+  - [ ] Support phase transitions: `Pending → Binding → (Bound | Failed)`
   - [ ] Update `reason` and `message` with abstract vocabulary
   - [ ] Implement `outputsAvailable` boolean gate
   - [ ] Track `observedGeneration` and `lastTransitionTime`

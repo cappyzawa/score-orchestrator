@@ -64,7 +64,18 @@ projection:
   imageFrom: { claimKey: "build-tool", outputKey: "image" }
 ```
 
+## Orchestrator Plan Emission Gate
+
+Before emitting a `WorkloadPlan`, the Orchestrator performs **unresolved placeholder detection**:
+
+1. **Values Composition**: Combine template defaults, normalized Workload spec, and ResourceClaim outputs
+2. **Placeholder Scanning**: Traverse all string fields in composed values to detect `${...}` patterns
+3. **Emission Control**: If unresolved placeholders found, skip Plan creation and set `RuntimeReady=False` with `Reason=ProjectionError`
+4. **Recovery Path**: Automatic reconciliation when ResourceClaim outputs become available
+
+This ensures no unresolved placeholders reach the runtime while providing clear, abstract feedback to users.
+
 ## Error mapping (abstract reasons for `Workload.status`)
 - Claim in progress/failure → `ClaimPending` / `ClaimFailed`
-- Outputs missing/mismatched vs plan → `ProjectionError`
+- Unresolved placeholders prevent plan emission → `ProjectionError`
 - Runtime health/materialization issues → `RuntimeDegraded` (no runtime-specific nouns in messages)

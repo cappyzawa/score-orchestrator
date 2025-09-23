@@ -9,13 +9,16 @@ Score defines a portable way to describe applications. This project provides a s
 - A reference **orchestrator** built around Kubernetes CRDs (group/version: `score.dev/v1b1`)
 - Public API surface: **`Workload`** only
 - Internal contracts for platform use: `ResourceClaim`, `WorkloadPlan`
-- Status is abstract and user-centric (a single `endpoint`, abstract `conditions`, binding summaries)
+- Status is abstract and user-centric (a single `endpoint`, abstract `conditions`, claim summaries)
 - Validation boundary: **CRD OpenAPI + CEL** for spec invariants; org policy via **VAP/OPA/Kyverno**
+
+## What happens when dependencies are not ready?
+When required outputs from `ResourceClaim` resolvers contain unresolved `${...}` placeholders, the Orchestrator detects this before emitting a `WorkloadPlan`. Instead of passing unresolved values to the runtime, it sets `Workload.status` with `RuntimeReady=False` and `Reason=ProjectionError`. Once resolver outputs are complete, the Orchestrator emits the Plan and the Workload converges to Ready.
 
 ## Design tenets (at a glance)
 - **Runtime-agnostic UX** — no runtime-specific nouns in user-visible docs
 - **Single-writer status** — only the orchestrator updates `Workload.status`
-- **Separation of concerns** — plan vs. bindings; users vs. platform
+- **Separation of concerns** — plan vs. claims; users vs. platform
 - **RBAC by default** — users see only `Workload`
 
 ## Documentation

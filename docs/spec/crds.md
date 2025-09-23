@@ -101,13 +101,13 @@ Runtime selection and platform details are **not** part of this spec.
   - **Types:** `Ready`, `ClaimsReady`, `RuntimeReady`, `InputsValid`
   - **Reasons (fixed, abstract):**
     `Succeeded`, `SpecInvalid`, `PolicyViolation`,
-    `ClaimPending`, `Claiming`, `ClaimFailed`,
+    `ClaimPending`, `ClaimFailed`,
     `ProjectionError`,
     `RuntimeSelecting`, `RuntimeProvisioning`, `RuntimeDegraded`,
     `QuotaExceeded`, `PermissionDenied`, `NetworkUnavailable`
   - **Message:** one neutral sentence; **no runtime-specific nouns**.
 - **`claims[]`** — summary per dependency:  
-  `key`, `phase (Pending|Claiming|Bound|Failed)`, `reason`, `message`, `outputsAvailable: bool`
+  `key`, `phase (Pending|Binding|Bound|Failed)`, `reason`, `message`, `outputsAvailable: bool`
 - **Readiness rule:** `InputsValid=True AND ClaimsReady=True AND RuntimeReady=True`
 
 ### Orchestrator configuration (non-CRD, conceptual)
@@ -154,7 +154,7 @@ Provisioners watch this resource, provision/bind concrete services, and publish 
 
 | Field                                       | Req     | Notes                                     |
 | ------------------------------------------- | ------- | ----------------------------------------- |
-| `phase`                                     | **Yes** | `Pending \| Claiming \| Bound \| Failed`   |
+| `phase`                                     | **Yes** | `Pending \| Binding \| Bound \| Failed`   |
 | `reason` / `message`                        | No      | abstract                                  |
 | `outputs`                                   | No*     | pointer type: nil when unavailable, CEL validates when present |
 | `outputsAvailable`                          | **Yes** | boolean gate for consumers                |
@@ -174,7 +174,7 @@ Provisioners watch this resource, provision/bind concrete services, and publish 
   - `Orphan`: Leave resources as-is without any cleanup
 
 ### Status (written by Provisioners)
-- **`phase`**: `Pending → Claiming → (Bound | Failed)` (may re-enter on reconcile)
+- **`phase`**: `Pending → Binding → (Bound | Failed)` (may re-enter on reconcile)
 - **`reason` / `message`**: short, neutral text (no runtime-specific nouns)
 - **`outputs` (standardized)**: Shape:
   ```yaml
@@ -205,10 +205,12 @@ Provisioners watch this resource, provision/bind concrete services, and publish 
 ## WorkloadPlan (`score.dev/v1b1`) — Internal (Orchestrator → Runtime)
 
 ### Purpose
-A runtime-agnostic **projection plan** that the Runtime consumes to materialize the application.  
+A runtime-agnostic **projection plan** that the Runtime consumes to materialize the application.
 It expresses **how to use** dependency outputs, not the outputs themselves.
 
 For example, `imageFrom: { claimKey, outputKey }` may be used to bind an `outputs.image` into the final container image.
+
+**Important:** The Orchestrator only emits this Plan when all required dependency outputs are resolved (no `${...}` placeholders remain). If unresolved placeholders are detected, Plan emission is skipped and `RuntimeReady=False` with `Reason=ProjectionError` is set on the `Workload.status`.
 
 ### Ownership & Visibility
 - Same name/namespace as the target `Workload`; OwnerRef set.
@@ -264,7 +266,7 @@ For example, `imageFrom: { claimKey, outputKey }` may be used to bind an `output
 - **PolicyViolation** — violates platform policy (Orchestrator config + Admission).
 - **ClaimPending** — dependency provisioning in progress.
 - **ClaimFailed** — dependency provisioning failed.
-- **ProjectionError** — plan requires outputs that are missing/mismatched.
+- **ProjectionError** — unresolved placeholders prevent plan emission.
 - **RuntimeSelecting** — runtime class decision pending/deferred.
 - **RuntimeProvisioning** — runtime materialization in progress.
 - **RuntimeDegraded** — runtime reported unhealthy/degraded state.

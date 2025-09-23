@@ -471,6 +471,21 @@ Where:
 
 **Projection failures (normative):** Missing required outputs in `${resources.<key>.outputs.<name>}` MUST set `RuntimeReady=False (ProjectionError)`.
 
+### Placeholder Detection and Error Handling
+
+The Orchestrator performs **pre-emission validation** of composed values to ensure no unresolved placeholders reach the WorkloadPlan:
+
+**Detection Process**:
+1. **Values Composition**: Combine template defaults, normalized Workload spec, and ResourceClaim outputs
+2. **String Traversal**: Scan all string fields in composed values for `${...}` patterns
+3. **Plan Emission Control**: If unresolved placeholders found, skip WorkloadPlan creation
+4. **Status Reporting**: Set `RuntimeReady=False` with `Reason=ProjectionError` and neutral message
+5. **Automatic Retry**: Requeue for reconciliation when ResourceClaim outputs become available
+
+**Error Message Format**: `"One or more required outputs are not resolved."` (single sentence, neutral wording, ends with period)
+
+**Event Logging**: Record single, neutral event per unresolved state (avoid log spam during waiting periods)
+
 ---
 
 ## Configuration Examples
