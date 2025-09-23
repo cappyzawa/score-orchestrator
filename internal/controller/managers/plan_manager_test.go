@@ -249,6 +249,107 @@ var _ = Describe("PlanManager", func() {
 				Expect(runtimeCondition.Reason).To(Equal(conditions.ReasonRuntimeSelecting))
 			})
 		})
+
+		Context("when placeholders are unresolved", func() {
+			It("should skip plan creation and set ProjectionError", func() {
+				fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+				endpointDeriver := endpoint.NewEndpointDeriver(fakeClient)
+				mockRecorder := &mockEventRecorder{}
+
+				// Mock config loading for successful backend selection
+				testConfig := &scorev1b1.OrchestratorConfig{
+					Spec: scorev1b1.OrchestratorConfigSpec{
+						Profiles: []scorev1b1.ProfileSpec{
+							{
+								Name: "test-profile",
+								Backends: []scorev1b1.BackendSpec{
+									{
+										BackendId:    "test-backend",
+										RuntimeClass: "kubernetes",
+										Priority:     100,
+										Template: scorev1b1.TemplateSpec{
+											Kind: "manifests",
+											Ref:  "test-template:latest",
+										},
+									},
+								},
+							},
+						},
+						Defaults: scorev1b1.DefaultsSpec{
+							Profile: "test-profile",
+						},
+					},
+				}
+
+				mockConfigLoader := &mockConfigLoader{
+					loadConfigFunc: func(ctx context.Context) (*scorev1b1.OrchestratorConfig, error) {
+						return testConfig, nil
+					},
+				}
+
+				// Create a status manager for the test
+				statusManager := NewStatusManager(fakeClient, scheme, mockRecorder, endpointDeriver)
+				pm := NewPlanManager(fakeClient, scheme, mockRecorder, mockConfigLoader, endpointDeriver, statusManager)
+
+				// Create workload with unresolved placeholders
+				workloadWithPlaceholders := &scorev1b1.Workload{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-workload",
+						Namespace: "test-ns",
+					},
+					Spec: scorev1b1.WorkloadSpec{
+						Containers: map[string]scorev1b1.ContainerSpec{
+							"main": {
+								Image: "nginx:latest",
+								Variables: map[string]string{
+									"DB_HOST": "${resources.db.host}",
+								},
+							},
+						},
+					},
+				}
+
+				// Claims are ready but outputs contain unresolved placeholders
+				claimsWithUnresolvedOutputs := []scorev1b1.ResourceClaim{
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "test-claim",
+							Namespace: "test-ns",
+						},
+						Spec: scorev1b1.ResourceClaimSpec{
+							Key:  "db",
+							Type: "postgres",
+						},
+						Status: scorev1b1.ResourceClaimStatus{
+							Phase:            "Bound",
+							OutputsAvailable: false, // Outputs not available, causing unresolved placeholders
+						},
+					},
+				}
+
+				agg := status.ClaimAggregation{
+					Ready:   true,
+					Message: "All claims are ready",
+				}
+
+				// Act
+				err := pm.EnsurePlan(context.Background(), workloadWithPlaceholders, claimsWithUnresolvedOutputs, agg)
+
+				// Assert: Should return error due to unresolved placeholders
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("failed to resolve placeholders"))
+
+				// Verify no WorkloadPlan was created
+				planList := &scorev1b1.WorkloadPlanList{}
+				err = fakeClient.List(context.Background(), planList, client.InNamespace("test-ns"))
+				Expect(err).ToNot(HaveOccurred())
+				Expect(planList.Items).To(BeEmpty())
+
+				// Verify error event was recorded (either ProjectionError or PlanError)
+				Expect(mockRecorder.events).To(HaveLen(1))
+				Expect(mockRecorder.events[0]).To(BeElementOf(EventReasonProjectionError, EventReasonPlanError))
+			})
+		})
 	})
 
 	Describe("GetPlan", func() {
