@@ -98,14 +98,20 @@ func (pm *PlanManager) EnsurePlan(ctx context.Context, workload *scorev1b1.Workl
 		if err := reconcile.UpsertWorkloadPlan(ctx, pm.client, workload, claims, selectedBackend); err != nil {
 			log.Error(err, "Failed to upsert WorkloadPlan")
 
-			// Check if this is a projection error (missing outputs)
-			if strings.Contains(err.Error(), "missing required outputs for projection") {
+			// Check if this is a projection error (missing outputs or unresolved placeholders)
+			if strings.Contains(err.Error(), "missing required outputs for projection") ||
+				strings.Contains(err.Error(), "unresolved placeholders") {
 				pm.statusManager.SetRuntimeReadyCondition(
 					workload,
 					false,
 					conditions.ReasonProjectionError,
-					fmt.Sprintf("Cannot create plan: %v", err))
-				pm.recorder.Eventf(workload, EventTypeWarning, EventReasonProjectionError, "Missing required resource outputs: %v", err)
+					conditions.MessageProjectionError)
+				pm.recorder.Eventf(workload, EventTypeWarning, EventReasonProjectionError, conditions.MessageProjectionError)
+
+				// Log detailed error information while keeping user messages neutral
+				if strings.Contains(err.Error(), "parse error") {
+					log.Error(err, "Failed to parse composed values; treated as unresolved")
+				}
 				return err
 			}
 
