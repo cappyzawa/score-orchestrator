@@ -52,14 +52,6 @@ rules:
   - list
   - watch
 - apiGroups:
-  - score.dev
-  resources:
-  - resourceclaims
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
   - apps
   resources:
   - deployments

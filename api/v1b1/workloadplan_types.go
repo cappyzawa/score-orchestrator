@@ -54,37 +54,6 @@ type FromClaimOutput struct {
 	OutputKey string `json:"outputKey"`
 }
 
-// EnvMapping projects a binding output into an environment variable.
-type EnvMapping struct {
-	// Name is the environment variable name.
-	Name string `json:"name"`
-	// From selects the claim output to inject.
-	From FromClaimOutput `json:"from"`
-}
-
-// VolumeProjection projects a binding output into a volume (abstract).
-type VolumeProjection struct {
-	// Name is a logical volume name.
-	Name string `json:"name,omitempty"`
-	// From selects the claim output to project into the volume.
-	From *FromClaimOutput `json:"from,omitempty"`
-}
-
-// FileProjection projects a binding output into a file path (abstract).
-type FileProjection struct {
-	// Path is a file path inside the container filesystem.
-	Path string `json:"path,omitempty"`
-	// From selects the claim output to write to the path.
-	From *FromClaimOutput `json:"from,omitempty"`
-}
-
-// WorkloadProjection configures how claim outputs are injected into the workload.
-type WorkloadProjection struct {
-	Env     []EnvMapping       `json:"env,omitempty"`
-	Volumes []VolumeProjection `json:"volumes,omitempty"`
-	Files   []FileProjection   `json:"files,omitempty"`
-}
-
 // PlanClaim declares a claim requirement passed to the runtime controller.
 // It mirrors the resolution keys (type/class/params) used by resolvers.
 type PlanClaim struct {
@@ -109,10 +78,11 @@ type WorkloadPlanSpec struct {
 	RuntimeClass string `json:"runtimeClass"`
 	// Template contains the reference and type information for runtime materialization.
 	Template *TemplateSpec `json:"template,omitempty"`
-	// Values contains the composed template values (defaults ⊕ normalize(Workload) ⊕ outputs).
-	Values *runtime.RawExtension `json:"values,omitempty"`
-	// Projection defines how claim outputs are injected into the workload.
-	Projection WorkloadProjection `json:"projection,omitempty"`
+	// ResolvedValues contains fully resolved final values with all placeholders substituted.
+	// Runtime controllers should use this as the single source of truth for template values.
+	// Format: { containers: { <name>: { env: { <key>: <value|valueFrom> }}}, service: {...}, ... }
+	// Note: CEL validation for placeholder prevention is not implemented due to RawExtension type limitations
+	ResolvedValues *runtime.RawExtension `json:"resolvedValues,omitempty"`
 	// Claims declares resource requirements to be materialized by the runtime.
 	Claims []PlanClaim `json:"claims,omitempty"`
 }

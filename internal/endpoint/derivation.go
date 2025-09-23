@@ -49,7 +49,7 @@ func (e *EndpointDeriver) DeriveEndpoint(
 	}
 
 	// 1. Check template endpoint configuration
-	if plan.Spec.Template != nil && plan.Spec.Values != nil {
+	if plan.Spec.Template != nil && plan.Spec.ResolvedValues != nil {
 		if templateEndpoint, err := e.extractTemplateEndpoint(plan); err == nil && templateEndpoint != "" {
 			return e.normalizeEndpoint(templateEndpoint, workload, plan)
 		}

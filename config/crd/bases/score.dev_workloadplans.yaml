@@ -91,91 +91,14 @@ spec:
                   used to compute this plan.
                 format: int64
                 type: integer
-              projection:
-                description: Projection defines how claim outputs are injected into
-                  the workload.
-                properties:
-                  env:
-                    items:
-                      description: EnvMapping projects a binding output into an environment
-                        variable.
-                      properties:
-                        from:
-                          description: From selects the claim output to inject.
-                          properties:
-                            claimKey:
-                              description: ClaimKey is the key under Workload.spec.resources
-                                (e.g., "db").
-                              type: string
-                            outputKey:
-                              description: OutputKey is the output field exported
-                                by the claim (e.g., "uri").
-                              type: string
-                          required:
-                          - claimKey
-                          - outputKey
-                          type: object
-                        name:
-                          description: Name is the environment variable name.
-                          type: string
-                      required:
-                      - from
-                      - name
-                      type: object
-                    type: array
-                  files:
-                    items:
-                      description: FileProjection projects a binding output into a
-                        file path (abstract).
-                      properties:
-                        from:
-                          description: From selects the claim output to write to the
-                            path.
-                          properties:
-                            claimKey:
-                              description: ClaimKey is the key under Workload.spec.resources
-                                (e.g., "db").
-                              type: string
-                            outputKey:
-                              description: OutputKey is the output field exported
-                                by the claim (e.g., "uri").
-                              type: string
-                          required:
-                          - claimKey
-                          - outputKey
-                          type: object
-                        path:
-                          description: Path is a file path inside the container filesystem.
-                          type: string
-                      type: object
-                    type: array
-                  volumes:
-                    items:
-                      description: VolumeProjection projects a binding output into
-                        a volume (abstract).
-                      properties:
-                        from:
-                          description: From selects the claim output to project into
-                            the volume.
-                          properties:
-                            claimKey:
-                              description: ClaimKey is the key under Workload.spec.resources
-                                (e.g., "db").
-                              type: string
-                            outputKey:
-                              description: OutputKey is the output field exported
-                                by the claim (e.g., "uri").
-                              type: string
-                          required:
-                          - claimKey
-                          - outputKey
-                          type: object
-                        name:
-                          description: Name is a logical volume name.
-                          type: string
-                      type: object
-                    type: array
+              resolvedValues:
+                description: |-
+                  ResolvedValues contains fully resolved final values with all placeholders substituted.
+                  Runtime controllers should use this as the single source of truth for template values.
+                  Format: { containers: { <name>: { env: { <key>: <value|valueFrom> }}}, service: {...}, ... }
+                  Note: CEL validation for placeholder prevention is not implemented due to RawExtension type limitations
                 type: object
+                x-kubernetes-preserve-unknown-fields: true
               runtimeClass:
                 description: RuntimeClass is the selected runtime controller class.
                 type: string
@@ -198,11 +121,6 @@ spec:
                 - kind
                 - ref
                 type: object
-              values:
-                description: Values contains the composed template values (defaults
-                  ⊕ normalize(Workload) ⊕ outputs).
-                type: object
-                x-kubernetes-preserve-unknown-fields: true
               workloadRef:
                 description: WorkloadRef identifies the source Workload of this plan.
                 properties:

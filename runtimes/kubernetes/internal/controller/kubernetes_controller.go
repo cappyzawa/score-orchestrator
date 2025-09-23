@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -227,13 +228,8 @@ func (r *KubernetesRuntimeReconciler) buildDeployment(ctx context.Context, plan 
 	// Default replicas to 1 if not specified
 	replicas := int32(1)
 
-	// Get ResourceClaims to build values for projection
-	claims, err := r.getResourceClaims(ctx, workload)
-	if err != nil {
-		log.FromContext(ctx).Error(err, "Failed to get ResourceClaims for projection", "workload", workload.Name)
-		// Continue with empty claims - will use template variables as-is
-		claims = []scorev1b1.ResourceClaim{}
-	}
+	// ResourceClaims are no longer needed for placeholder resolution
+	// All values are now resolved by the Orchestrator and provided in WorkloadPlan.ResolvedValues
 
 	// Build containers from workload spec
 	containers := make([]corev1.Container, 0, len(workload.Spec.Containers))
@@ -243,14 +239,26 @@ func (r *KubernetesRuntimeReconciler) buildDeployment(ctx context.Context, plan 
 			Image: containerSpec.Image,
 		}
 
-		// Add environment variables with projection substitution
-		if containerSpec.Variables != nil {
+		// Get resolved environment variables from WorkloadPlan.ResolvedValues
+		if plan.Spec.ResolvedValues != nil {
+			resolvedEnv, err := r.extractResolvedEnv(plan.Spec.ResolvedValues, containerName)
+			if err != nil {
+				log.FromContext(ctx).Error(err, "Failed to extract resolved environment variables")
+				return nil, fmt.Errorf("failed to extract resolved environment variables: %w", err)
+			}
+
+			for envName, envValue := range resolvedEnv {
+				container.Env = append(container.Env, corev1.EnvVar{
+					Name:  envName,
+					Value: envValue,
+				})
+			}
+		} else if containerSpec.Variables != nil {
+			// Fallback: use raw values from containerSpec.Variables (no placeholder resolution)
 			for key, value := range containerSpec.Variables {
-				// Apply projection to substitute template variables
-				resolvedValue := r.applyProjection(plan.Spec.Projection, claims, key, value)
 				container.Env = append(container.Env, corev1.EnvVar{
 					Name:  key,
-					Value: resolvedValue,
+					Value: value,
 				})
 			}
 		}
@@ -387,69 +395,44 @@ func (r *KubernetesRuntimeReconciler) buildService(plan *scorev1b1.WorkloadPlan,
 	return service
 }
 
-// getResourceClaims retrieves ResourceClaims for a workload
-func (r *KubernetesRuntimeReconciler) getResourceClaims(ctx context.Context, workload *scorev1b1.Workload) ([]scorev1b1.ResourceClaim, error) {
-	claimList := &scorev1b1.ResourceClaimList{}
-	err := r.List(ctx, claimList,
-		client.InNamespace(workload.Namespace),
-		client.MatchingLabels{"score.dev/workload": workload.Name})
-	if err != nil {
-		return nil, err
-	}
-	return claimList.Items, nil
-}
-
-// applyProjection applies WorkloadPlan projection to substitute template variables with actual values
-func (r *KubernetesRuntimeReconciler) applyProjection(projection scorev1b1.WorkloadProjection, claims []scorev1b1.ResourceClaim, envVarName, originalValue string) string {
-	if projection.Env == nil {
-		return originalValue
+// extractResolvedEnv extracts resolved environment variables for a specific container from ResolvedValues
+func (r *KubernetesRuntimeReconciler) extractResolvedEnv(resolvedValues *runtime.RawExtension, containerName string) (map[string]string, error) {
+	if resolvedValues == nil || resolvedValues.Raw == nil {
+		return make(map[string]string), nil
 	}
 
-	// Build a map of claim outputs for quick lookup
-	claimOutputs := make(map[string]map[string]string)
-	for _, claim := range claims {
-		outputs := make(map[string]string)
+	// Parse the resolved values JSON
+	var values map[string]interface{}
+	if err := json.Unmarshal(resolvedValues.Raw, &values); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal resolved values: %w", err)
+	}
 
-		// Extract values from Secret if available
-		if claim.Status.Outputs != nil && claim.Status.Outputs.SecretRef != nil {
-			// For this implementation, we'll get the secret data
-			// In a real implementation, you might want to read the actual secret
-			// For now, we'll use the claim spec key to build a mapping
-			secretName := claim.Status.Outputs.SecretRef.Name
+	// Navigate to containers.<containerName>.env
+	containers, ok := values["containers"].(map[string]interface{})
+	if !ok {
+		return make(map[string]string), nil
+	}
 
-			// Build expected outputs based on claim type
-			if claim.Spec.Type == "postgres" {
-				outputs["username"] = fmt.Sprintf("postgres-%s", claim.Name)
-				outputs["password"] = fmt.Sprintf("password-%s", claim.Name)
-				outputs["host"] = fmt.Sprintf("%s-postgres", claim.Name)
-				outputs["port"] = "5432"
-				outputs["database"] = fmt.Sprintf("db_%s", claim.Name)
-				outputs["uri"] = fmt.Sprintf("postgresql://%s:%s@%s:5432/%s", outputs["username"], outputs["password"], outputs["host"], outputs["database"])
-			}
-			log.FromContext(context.Background()).Info("Secret outputs available", "secretName", secretName, "outputs", outputs)
+	container, ok := containers[containerName].(map[string]interface{})
+	if !ok {
+		return make(map[string]string), nil
+	}
+
+	env, ok := container["env"].(map[string]interface{})
+	if !ok {
+		return make(map[string]string), nil
+	}
+
+	// Convert to string map
+	result := make(map[string]string)
+	for key, value := range env {
+		if strValue, ok := value.(string); ok {
+			result[key] = strValue
 		}
-
-		claimOutputs[claim.Spec.Key] = outputs
+		// TODO: Handle valueFrom.secretKeyRef pattern for Secret references
 	}
 
-	// Apply projection mappings for this environment variable
-	result := originalValue
-	for _, envMapping := range projection.Env {
-		if envMapping.Name == envVarName {
-			claimKey := envMapping.From.ClaimKey
-			outputKey := envMapping.From.OutputKey
-
-			if claimData, exists := claimOutputs[claimKey]; exists {
-				if value, exists := claimData[outputKey]; exists {
-					// Replace template variable with actual value
-					templateVar := fmt.Sprintf("${resources.%s.%s}", claimKey, outputKey)
-					result = strings.ReplaceAll(result, templateVar, value)
-				}
-			}
-		}
-	}
-
-	return result
+	return result, nil
 }
 
 // updateWorkloadPlanStatus updates WorkloadPlan.Status based on runtime resource readiness
