@@ -94,6 +94,10 @@ spec.containers.all(container,
 - **Placeholders resolution order**: **Provision → Projection(IR) → Render** (`${resources.*}` is resolved by provisioner outputs)
 - **Values precedence**: **`defaults ⊕ normalize(Workload) ⊕ outputs`** (right-hand wins)
 
+### Placeholder Detection Boundary
+
+**NOT handled by CEL/Admission**: Deep traversal of arbitrary nested values for unresolved `${...}` placeholders is **not performed at the CRD level**. This validation occurs within the Orchestrator before `WorkloadPlan` emission. If unresolved placeholders remain, the Orchestrator skips Plan creation and sets `RuntimeReady=False` with `Reason=ProjectionError` on `Workload.status`.
+
 **CEL examples (illustrative)**
 - Exactly-one for files:
 ```cel
@@ -303,11 +307,12 @@ spec:
 
 **DO NOT ENFORCE:**
 - Organization-specific naming patterns
-- Registry or image restrictions  
+- Registry or image restrictions
 - Resource quotas or limits
 - Team or environment-specific policies
 - Cost or approval workflows
 - Security scanning requirements
+- Unresolved `${...}` placeholder detection (handled by Orchestrator pre-emission check)
 
 ### Platform Responsibilities (Policy Level)
 

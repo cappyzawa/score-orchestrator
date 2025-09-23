@@ -128,7 +128,7 @@ The Orchestrator **must be able to read its configuration** (e.g., a ConfigMap i
 
 **Security Constraints:**
 - **Cannot** create or modify `Workload` resources (prevents unauthorized workload injection)
-- **Cannot** write to `ResourceClaim.status` (prevents binding state corruption)
+- **Cannot** write to `ResourceClaim.status` (prevents claim state corruption)
 - **Must** verify OwnerReference before creating internal resources
 - **Should** implement leader election for high availability
 
@@ -181,7 +181,7 @@ rules:
 
 **Security Constraints:**
 - May **read** `Workload` metadata if needed (read-only); must not bypass orchestration
-- **Cannot** modify `ResourceClaim` resources (prevents binding manipulation)
+- **Cannot** modify `ResourceClaim` resources (prevents claim manipulation)
 - **Must** validate OwnerReference on `WorkloadPlan` before processing
 - **Should** implement resource quotas and limits for platform resources
 
@@ -191,7 +191,7 @@ Provisioner Controllers manage specific resource types and provide standardized 
 
 **Core Responsibilities:**
 - Claim and bind `ResourceClaim` resources of supported types
-- **Exclusive writer** of `ResourceClaim.status` for owned bindings
+- **Exclusive writer** of `ResourceClaim.status` for owned claims
 - Provision underlying resources (databases, message queues, storage, etc.)
 - Populate standardized outputs for consumption by Runtime Controllers
 

@@ -59,8 +59,8 @@ Each `ResourceClaim` follows its own state progression:
 
 ```
 ResourceClaim Phase Transitions:
-Pending → Claiming → Bound (success)
-                 ↘ Failed (error)
+Pending → Binding → Bound (success)
+                ↘ Failed (error)
 ```
 
 #### Pending Phase
@@ -68,10 +68,10 @@ Pending → Claiming → Bound (success)
 - **State**: Waiting for Provisioner Controller to claim the resource
 - **Orchestrator Status**: Updates `Workload.status.claims[].phase=Pending`
 
-#### Claiming Phase  
+#### Binding Phase
 - **Trigger**: Provisioner Controller begins provisioning the resource
 - **State**: Active provisioning of the required dependency
-- **Orchestrator Status**: Updates `Workload.status.claims[].phase=Claiming`
+- **Orchestrator Status**: Updates `Workload.status.claims[].phase=Binding`
 
 #### Bound Phase (Success)
 - **Trigger**: Provisioner Controller successfully provisions resource and populates `status.outputs`
@@ -103,25 +103,29 @@ The Orchestrator sets `ClaimsReady=True` when:
 - `ClaimsReady=True` (all dependencies are bound)
 
 ### Orchestrator Actions
-1. **Projection Rule Generation**: Create container environment variable mappings:
-   ```
-   env:
-     - name: DATABASE_URL
-       from:
-         claimKey: "database"
-         outputKey: "connectionString"
-   ```
+1. **Values Composition**: Combine values using precedence: **`defaults ⊕ normalize(Workload) ⊕ outputs`** (right-hand wins)
 
-2. **WorkloadPlan Creation**: Generate comprehensive execution plan with:
-   - **Values precedence**: **`defaults ⊕ normalize(Workload) ⊕ outputs`** (right-hand wins)
+2. **Unresolved Placeholder Detection**: Before emitting the WorkloadPlan, scan composed values for `${...}` patterns:
+   - If unresolved placeholders are found, **skip Plan emission**
+   - Set `RuntimeReady=False` with `Reason=ProjectionError`
+   - Set `Message="One or more required outputs are not resolved."`
+   - Requeue for later reconciliation when outputs become available
+
+3. **WorkloadPlan Creation** (only when all placeholders resolved): Generate comprehensive execution plan with:
+   - **Projection Rule Generation**: Create container environment variable mappings:
+     ```
+     env:
+       - name: DATABASE_URL
+         from:
+           claimKey: "database"
+           outputKey: "connectionString"
+     ```
    - **Container Projections**: Environment variables, volume mounts, file injections
    - **Service Configuration**: Port mappings, ingress rules, network policies
    - **Claim Dependencies**: Required outputs and criticality indicators
    - **Runtime Metadata**: Labels, annotations, ownership mode
 
-   Note: `${resources.*}` resolution occurs **after Provision completion** (unresolved placeholders result in `ProjectionError`)
-
-3. **Plan Validation**: Ensure plan completeness and consistency
+4. **Plan Validation**: Ensure plan completeness and consistency
 
 ### Runtime materialization lifecycle (internal)
 
@@ -158,7 +162,8 @@ Runtime Controllers manage platform-specific resources but report status through
 2. **Provisioning**: `RuntimeReady=Unknown`, `reason=RuntimeProvisioning`  
 3. **Success**: `RuntimeReady=True`, `reason=Succeeded`
 4. **Degraded**: `RuntimeReady=True`, `reason=RuntimeDegraded` (functional but suboptimal)
-5. **Failure**: `RuntimeReady=False`, `reason=ProjectionError`
+5. **Projection Error**: `RuntimeReady=False`, `reason=ProjectionError` (unresolved placeholders prevent Plan emission)
+6. **Other Failures**: `RuntimeReady=False`, various reasons (platform-specific errors)
 
 ## Phase 5: Status Aggregation and Endpoint Reflection
 
@@ -211,10 +216,13 @@ Only **one endpoint** is exposed in `status.endpoint` to maintain interface simp
 - **Resource Contention**: `reason=RuntimeProvisioning`, wait for platform resource availability
 - **Quota Limits**: `reason=QuotaExceeded`, pause until quota available
 
-### Permanent Errors  
+### Permanent Errors
 - **Specification Errors**: `reason=SpecInvalid`, requires user intervention
 - **Policy Violations**: `reason=PolicyViolation`, requires compliance or policy change
 - **Resource Claim Failures**: `reason=ClaimFailed`, requires dependency resolution
+
+### Transient Errors (Automatic Recovery)
+- **Projection Errors**: `reason=ProjectionError`, automatic retry when resolver outputs become available
 
 ### Recovery Mechanisms
 
@@ -282,6 +290,8 @@ kubectl get events --field-selector involvedObject.kind=Workload
         ↓ (All Bound)
 [ClaimsReady=True]
         ↓
+[Check for Unresolved Placeholders] → [ProjectionError] → [Requeue + Wait for Outputs]
+        ↓ (All Resolved)
 [Generate WorkloadPlan]
         ↓  
 [Runtime Materialization] → [Runtime Failed] → [Error Status + Retry]
