@@ -165,7 +165,38 @@ Runtime Controllers manage platform-specific resources but report status through
 5. **Projection Error**: `RuntimeReady=False`, `reason=ProjectionError` (unresolved placeholders prevent Plan emission)
 6. **Other Failures**: `RuntimeReady=False`, various reasons (platform-specific errors)
 
-## Phase 5: Status Aggregation and Endpoint Reflection
+## Phase 5: Runtime Exposure and Endpoint Reflection
+
+### WorkloadExposure Creation and Management
+
+After successful WorkloadPlan generation, the Orchestrator creates a `WorkloadExposure` resource to coordinate endpoint publication with Runtime Controllers:
+
+#### Orchestrator Actions
+1. **WorkloadExposure Creation**: Create `WorkloadExposure` resource with:
+   - `spec.workloadRef`: Reference to target Workload
+   - `spec.runtimeClass`: Selected runtime (e.g., `kubernetes`, `ecs`, `nomad`)
+   - `spec.observedWorkloadGeneration`: For causality tracking
+2. **Spec-only Creation**: Orchestrator writes only the spec; status remains empty
+
+#### Runtime Controller Actions
+Once the Runtime Controller successfully materializes platform resources and determines exposure endpoints:
+
+1. **Exposure Detection**: Monitor platform-specific resources (Ingress, LoadBalancer, Gateway, etc.)
+2. **Status Publication**: Update `WorkloadExposure.status` with:
+   ```yaml
+   status:
+     exposures:
+       - url: "https://app.example.com"
+         priority: 100
+         scope: "Public"
+         schemeHint: "HTTPS"
+         reachable: true
+     conditions:
+       - type: "ExposureReady"
+         status: "True"
+         reason: "Succeeded"
+   ```
+3. **Authority**: Runtime Controller is the **sole writer** of `WorkloadExposure.status`
 
 ### Orchestrator Status Aggregation
 
@@ -178,34 +209,32 @@ Ready = InputsValid ∧ ClaimsReady ∧ RuntimeReady
 
 where:
   InputsValid = (spec validation passed ∧ policy compliance verified)
-  ClaimsReady = (all ResourceClaims in Bound phase ∧ outputs available)  
+  ClaimsReady = (all ResourceClaims in Bound phase ∧ outputs available)
   RuntimeReady = (platform materialization successful ∧ workload functional)
 ```
 
-#### Endpoint Reflection Timing
+#### Endpoint Mirror Process
 
-The `status.endpoint` field follows this update sequence:
+The `status.endpoint` field follows this **mirror-only** update sequence:
 
-1. **Initial State**: `endpoint: null` (no service available)
-2. **Runtime Reports Endpoint**: Runtime Controller updates internal status with service endpoint
-3. **Orchestrator Aggregation**: Orchestrator reads runtime status and selects primary endpoint
-4. **Status Update**: Orchestrator updates `Workload.status.endpoint` with validated URI
-5. **User Visibility**: Endpoint becomes available to users via `kubectl get workload`
+1. **Initial State**: `endpoint: null` (no exposure published yet)
+2. **Runtime Publishes**: Runtime Controller updates `WorkloadExposure.status.exposures[]`
+3. **Orchestrator Mirrors**: Orchestrator reads `WorkloadExposure.status.exposures[0].url`
+4. **URI Validation**: Validate URL format and mirror to `Workload.status.endpoint`
+5. **Condition Normalization**: Map Runtime conditions to abstract reasons
+6. **User Visibility**: Endpoint becomes available via `kubectl get workload`
 
-#### Endpoint Selection Policy
+#### Endpoint Mirror Policy
 
-The Orchestrator determines the canonical endpoint using the following priority:
+The Orchestrator **mirrors** `WorkloadExposure.status.exposures[0].url` **as-is**, after URI validation.
+- **Generation Guard**: Ignore stale updates via `observedWorkloadGeneration`
+- **No Derivation**: Never compute endpoints from platform resources
+- **Null**: If no valid exposure exists, `endpoint` remains `null`
 
-1. **Orchestrator Config template**: If config specifies endpoint template pattern
-2. **Service Port Names**: Prefer ports named `web`, `http`, `https`, or `main`
-3. **Single Port**: If only one port is exposed, use that port
-4. **Platform Defaults**: Runtime-specific selection (external ingress > load balancer > nodeport > clusterip)
-
-**Normalization Rules:**
-- Always prefer HTTPS over HTTP when both are available
-- Include scheme (http/https) and port only when non-standard (not 80/443)
-- Use FQDN when available, fallback to service discovery names
-- Never expose internal/debug ports (health checks, metrics, admin interfaces)
+**No Observation-Based Derivation:**
+- The Orchestrator does **not** observe Services, Ingresses, or LoadBalancers
+- The Orchestrator does **not** compute endpoints from platform resources
+- Only Runtime-published exposures are mirrored to user status
 
 Only **one endpoint** is exposed in `status.endpoint` to maintain interface simplicity.
 
@@ -312,48 +341,6 @@ kubectl get events --field-selector involvedObject.kind=Workload
     - `containers[].imageFrom: { claimKey, outputKey: "image" }`
   - The Runtime consumes the plan plus claim outputs to set the final image used for execution.
 
-### Endpoint population & aggregation
-
-The Orchestrator derives endpoints using template-based logic with service port prioritization:
-
-#### Endpoint Derivation Process
-
-1. **Template-based computation**: Check WorkloadPlan template configuration for endpoint patterns
-2. **Service port prioritization**: Select the best port using Score specification-compliant logic:
-   - **HTTPS ports** (443, 8443) - Highest priority
-   - **HTTP ports** (80, 8080) - Medium priority
-   - **Other ports** - Lower priority (first port selected)
-3. **Canonical URL generation**: Generate normalized URLs with proper scheme and hostname
-4. **Status reflection**: Update `Workload.status.endpoint` with the derived canonical endpoint
-
-#### Port Selection Rules
-
-Since Score's `ServicePort` spec includes only `port` and `protocol` fields (no named ports), the Orchestrator determines the appropriate scheme based on port number characteristics:
-
-```go
-// Port-based HTTPS detection
-func isHTTPSPort(port int32) bool {
-    return port == 443 || port == 8443
-}
-
-// Port-based HTTP detection
-func isHTTPPort(port int32) bool {
-    return port == 80 || port == 8080
-}
-```
-
-#### URL Normalization
-
-- **Scheme selection**: Determined by port characteristics (HTTPS > HTTP)
-- **Hostname**: Generated as `{workload.name}.{workload.namespace}.svc.cluster.local`
-- **Port handling**: Standard ports (80, 443) are omitted; non-standard ports are included
-- **HTTPS preference**: When multiple ports are available, HTTPS ports are prioritized
-
-#### Status Contract
-
-- Only the **Orchestrator** updates `Workload.status.endpoint`
-- Runtimes and Provisioners do not write to Workload status
-- Single canonical endpoint is exposed (no multiple endpoints)
 
 ## Phase 6: Workload Deletion and Cleanup
 

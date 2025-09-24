@@ -22,8 +22,11 @@ See also: [`rbac.md`](rbac.md), [`control-plane.md`](control-plane.md), [`lifecy
 ### Internal APIs (Platform-facing)
 - **`ResourceClaim`** — Contract with **provisioners** for dependency provisioning.
   Spec is created/updated by the Orchestrator; **status is written by Provisioners**.
-- **`WorkloadPlan`** — Orchestrator-to-Runtime projection plan (single writer: Orchestrator).  
+- **`WorkloadPlan`** — Orchestrator-to-Runtime projection plan (single writer: Orchestrator).
   Same name/namespace as the target `Workload` (OwnerRef set). Hidden from users.
+- **`WorkloadExposure`** — Runtime-to-Orchestrator endpoint publication contract.
+  Spec is created by the Orchestrator; **status is written only by Runtime Controllers**.
+  Internal resource, hidden from users via RBAC.
 
 ---
 
@@ -302,6 +305,39 @@ Affected fields:
   See `docs/spec/rbac.md` for recommended RBAC roles.
 - **Owner references:** `ResourceClaim` and `WorkloadPlan` carry OwnerRef to their `Workload` for cascading GC.
 - **No runtime nouns in user-facing docs:** Never expose Deployment/Pod/ECS Task names to users.
+
+## WorkloadExposure (`score.dev/v1b1`) — Internal (Runtime-facing)
+
+### Purpose
+Internal coordination resource for Runtime Controllers to publish endpoints back to the Orchestrator. This enables the **runtime-only mirror** model where only Runtime-published endpoints surface in user status.
+
+### Contract (conceptual)
+
+**WorkloadExposure (spec)** — written by Orchestrator
+| Field                         | Req     | Notes                              |
+| ----------------------------- | ------- | ---------------------------------- |
+| `workloadRef`                 | **Yes** | Reference to target Workload       |
+| `runtimeClass`                | **Yes** | Selected runtime (kubernetes/ecs/nomad) |
+| `observedWorkloadGeneration`  | **Yes** | For causality tracking             |
+
+**WorkloadExposure (status)** — written **only** by Runtime Controllers
+| Field        | Req     | Notes                              |
+| ------------ | ------- | ---------------------------------- |
+| `exposures`  | No      | Array of published endpoints       |
+| `conditions` | **Yes** | Runtime-specific conditions        |
+
+#### ExposureSpec (conceptual)
+Each item in `status.exposures[]`:
+- **`url`** (required): string (format: uri, e.g., `https://app.example.com`)
+- `priority` (optional): int (higher wins; defaults to 0)
+- `scope` (optional): string (`Public`/`ClusterLocal`/`VPC`/`Other`)
+- `schemeHint` (optional): string (`HTTP`/`HTTPS`/`GRPC`/`TCP`/`OTHER`)
+- `reachable` (optional): bool|null (endpoint health status)
+
+### Authority and Visibility
+- **Hidden from users**: No direct access via RBAC
+- **Runtime authority**: Only Runtime Controllers write `status`
+- **Orchestrator coordination**: Orchestrator mirrors `exposures[0].url` to `Workload.status.endpoint`
 
 See: [`control-plane.md`](control-plane.md) for who watches/writes what, and [`validation.md`](validation.md) for schema/CEL invariants.
 
