@@ -18,6 +18,7 @@ When required outputs from `ResourceClaim` resolvers contain unresolved `${...}`
 ## Design tenets (at a glance)
 - **Runtime-agnostic UX** — no runtime-specific nouns in user-visible docs
 - **Single-writer status** — only the orchestrator updates `Workload.status`
+- **Runtime-sourced endpoints** — canonical URLs are published by Runtime, mirrored by Orchestrator
 - **Separation of concerns** — plan vs. claims; users vs. platform
 - **RBAC by default** — users see only `Workload`
 

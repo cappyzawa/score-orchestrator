@@ -78,10 +78,10 @@ rules:
   verbs: ["get", "list"]
 # Internal resource visibility for debugging
 - apiGroups: ["score.dev"]
-  resources: ["resourceclaims", "workloadplans"]
+  resources: ["resourceclaims", "workloadplans", "workloadexposures"]
   verbs: ["get", "list", "watch"]
 - apiGroups: ["score.dev"]
-  resources: ["resourceclaims/status", "workloadplans/status"]
+  resources: ["resourceclaims/status", "workloadplans/status", "workloadexposures/status"]
   verbs: ["get", "list"]
 ```
 
@@ -113,10 +113,10 @@ rules:
   verbs: ["get", "list", "update", "patch"]
 # Internal resource management
 - apiGroups: ["score.dev"]
-  resources: ["resourceclaims", "workloadplans"]
+  resources: ["resourceclaims", "workloadplans", "workloadexposures"]
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 - apiGroups: ["score.dev"]
-  resources: ["resourceclaims/status"]
+  resources: ["resourceclaims/status", "workloadexposures/status"]
   verbs: ["get", "list", "watch"]
 # Event publishing
 - apiGroups: [""]
@@ -131,6 +131,7 @@ The Orchestrator **must be able to read its configuration** (e.g., a ConfigMap i
 - **Cannot** write to `ResourceClaim.status` (prevents claim state corruption)
 - **Must** verify OwnerReference before creating internal resources
 - **Should** implement leader election for high availability
+- **Does not need** Services/Ingresses read access for endpoint logic (uses runtime-only mirror)
 
 ### Runtime Controllers
 
@@ -141,6 +142,7 @@ Runtime Controllers consume execution plans and materialize workloads on target 
 - Read `ResourceClaim.status.outputs` for dependency information
 - Report materialization progress via **runtime-internal** resources (not `WorkloadPlan.status`)
 - Manage platform-specific resources (Kubernetes Deployments, ECS Tasks, etc.)
+- **Exclusive writer** of `WorkloadExposure.status` for endpoint publication
 
 **Required ClusterRole:**
 ```yaml
@@ -163,6 +165,13 @@ rules:
 - apiGroups: ["score.dev"]
   resources: ["resourceclaims/status"]
   verbs: ["get", "list"]
+# Endpoint exposure publication
+- apiGroups: ["score.dev"]
+  resources: ["workloadexposures"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["score.dev"]
+  resources: ["workloadexposures/status"]
+  verbs: ["get", "list", "update", "patch"]
 # Platform-specific resource management (example: Kubernetes)
 - apiGroups: ["apps"]
   resources: ["deployments", "replicasets"]
