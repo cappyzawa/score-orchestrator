@@ -258,6 +258,19 @@ func main() {
 		os.Exit(1)
 	}
 	setupLog.Info("Provisioner Controller setup completed successfully")
+
+	// Setup ExposureMirror Controller
+	setupLog.Info("Setting up ExposureMirror Controller")
+	exposureMirror := &controller.ExposureMirrorReconciler{
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorderFor("exposure-mirror-controller"),
+	}
+	if err := exposureMirror.SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "ExposureMirror")
+		os.Exit(1)
+	}
+	setupLog.Info("ExposureMirror Controller setup completed successfully")
 	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
