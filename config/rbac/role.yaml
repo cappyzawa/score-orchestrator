@@ -28,6 +28,7 @@ rules:
   - score.dev
   resources:
   - resourceclaims
+  - workloadexposures
   - workloadplans
   verbs:
   - create
@@ -47,6 +48,13 @@ rules:
   - list
   - patch
   - update
+  - watch
+- apiGroups:
+  - score.dev
+  resources:
+  - workloadexposures/status
+  verbs:
+  - get
   - watch
 - apiGroups:
   - score.dev

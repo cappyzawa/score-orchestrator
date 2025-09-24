@@ -55,6 +55,8 @@ type WorkloadReconciler struct {
 // +kubebuilder:rbac:groups=score.dev,resources=resourceclaims,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=score.dev,resources=resourceclaims/status,verbs=get;list;watch
 // +kubebuilder:rbac:groups=score.dev,resources=workloadplans,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=score.dev,resources=workloadexposures,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=score.dev,resources=workloadexposures/status,verbs=get;watch
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
 
