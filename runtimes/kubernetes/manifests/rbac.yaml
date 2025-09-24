@@ -52,6 +52,22 @@ rules:
   - list
   - watch
 - apiGroups:
+  - score.dev
+  resources:
+  - workloadexposures
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - score.dev
+  resources:
+  - workloadexposures/status
+  verbs:
+  - get
+  - update
+  - patch
+- apiGroups:
   - apps
   resources:
   - deployments
@@ -74,6 +90,14 @@ rules:
   - list
   - patch
   - update
+  - watch
+- apiGroups:
+  - networking.k8s.io
+  resources:
+  - ingresses
+  verbs:
+  - get
+  - list
   - watch
 - apiGroups:
   - ""

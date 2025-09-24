@@ -175,12 +175,22 @@ func main() {
 	ctx := ctrl.SetupSignalHandler()
 
 	setupLog.Info("Setting up Kubernetes Runtime Controller")
-	if err := (&runtimectrl.KubernetesRuntimeReconciler{
+	runtimeController := &runtimectrl.KubernetesRuntimeReconciler{
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
 		Recorder: mgr.GetEventRecorderFor("kubernetes-runtime-controller"),
-	}).SetupWithManager(mgr); err != nil {
+	}
+
+	// Setup WorkloadPlan controller
+	if err := runtimeController.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "KubernetesRuntime")
+		os.Exit(1)
+	}
+
+	// Setup WorkloadExposure controller
+	setupLog.Info("Setting up WorkloadExposure Controller")
+	if err := runtimeController.SetupWorkloadExposureWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "WorkloadExposure")
 		os.Exit(1)
 	}
 
