@@ -41,6 +41,7 @@ import (
 	"github.com/cappyzawa/score-orchestrator/internal/controller"
 	"github.com/cappyzawa/score-orchestrator/internal/controller/managers"
 	"github.com/cappyzawa/score-orchestrator/internal/endpoint"
+	"github.com/cappyzawa/score-orchestrator/internal/meta"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -271,6 +272,20 @@ func main() {
 		os.Exit(1)
 	}
 	setupLog.Info("ExposureMirror Controller setup completed successfully")
+
+	// Setup WorkloadExposureRegistrar Controller
+	setupLog.Info("Setting up WorkloadExposureRegistrar Controller")
+	workloadExposureRegistrar := &controller.WorkloadExposureRegistrar{
+		Client:       mgr.GetClient(),
+		Scheme:       mgr.GetScheme(),
+		Recorder:     mgr.GetEventRecorderFor("workload-exposure-registrar"),
+		RuntimeClass: meta.RuntimeClassKubernetes,
+	}
+	if err := workloadExposureRegistrar.SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "WorkloadExposureRegistrar")
+		os.Exit(1)
+	}
+	setupLog.Info("WorkloadExposureRegistrar Controller setup completed successfully")
 	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
