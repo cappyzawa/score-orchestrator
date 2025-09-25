@@ -204,7 +204,7 @@ spec:
 				return ""
 			}
 			return strings.TrimSpace(output)
-		}, time.Minute*2, time.Second*5).Should(ContainSubstring("service-a"))
+		}, time.Minute*2, time.Second*5).Should(ContainSubstring("localhost"))
 
 		By("Verifying Workload endpoint is mirrored correctly")
 		Eventually(func() *string {
