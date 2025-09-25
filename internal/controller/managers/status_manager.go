@@ -209,11 +209,15 @@ func (sm *StatusManager) updateRuntimeStatusFromPlan(
 		return
 	}
 
-	// Update endpoint in status if derived
-	if derivedEndpoint != nil && *derivedEndpoint != "" {
-		workload.Status.Endpoint = derivedEndpoint
-		log.V(1).Info("Derived endpoint", "endpoint", *derivedEndpoint)
-	}
+	// Note: ADR-0007 - Endpoint is now managed by ExposureMirrorReconciler only
+	// The Orchestrator no longer derives endpoints directly from WorkloadPlan
+	// Endpoint mirroring is handled by WorkloadExposure -> Workload status mirroring
+	//
+	// Update endpoint in status if derived (DISABLED per ADR-0007)
+	// if derivedEndpoint != nil && *derivedEndpoint != "" {
+	//     workload.Status.Endpoint = derivedEndpoint
+	//     log.V(1).Info("Derived endpoint", "endpoint", *derivedEndpoint)
+	// }
 
 	// Check runtime status from WorkloadPlan.Status
 	runtimeReady, reason, message := sm.checkRuntimeStatusFromPlan(plan)
