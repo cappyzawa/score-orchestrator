@@ -35,9 +35,9 @@ type ClaimAggregation struct {
 func AggregateClaimStatuses(claims []scorev1b1.ResourceClaim) ClaimAggregation {
 	if len(claims) == 0 {
 		return ClaimAggregation{
-			Ready:   false,
-			Reason:  conditions.ReasonClaimPending,
-			Message: conditions.MessageNoClaimsFound,
+			Ready:   true,
+			Reason:  conditions.ReasonSucceeded,
+			Message: "No resource dependencies",
 			Claims:  []scorev1b1.ClaimSummary{},
 		}
 	}

@@ -160,11 +160,11 @@ var _ = Describe("ClaimManager", func() {
 	})
 
 	Describe("AggregateStatus", func() {
-		It("should return not ready when no claims", func() {
+		It("should return ready when no claims exist", func() {
 			agg := claimManager.AggregateStatus([]scorev1b1.ResourceClaim{})
-			Expect(agg.Ready).To(BeFalse())
-			Expect(agg.Reason).To(Equal(conditions.ReasonClaimPending))
-			Expect(agg.Message).To(Equal(conditions.MessageNoClaimsFound))
+			Expect(agg.Ready).To(BeTrue())
+			Expect(agg.Reason).To(Equal(conditions.ReasonSucceeded))
+			Expect(agg.Message).To(Equal("No resource dependencies"))
 			Expect(agg.Claims).To(BeEmpty())
 		})
 
