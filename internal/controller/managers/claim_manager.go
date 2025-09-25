@@ -216,9 +216,9 @@ func (cm *ClaimManager) getResourceClaimsWithoutIndex(ctx context.Context, workl
 func (cm *ClaimManager) AggregateStatus(claims []scorev1b1.ResourceClaim) status.ClaimAggregation {
 	if len(claims) == 0 {
 		return status.ClaimAggregation{
-			Ready:   false,
-			Reason:  conditions.ReasonClaimPending,
-			Message: conditions.MessageNoClaimsFound,
+			Ready:   true,
+			Reason:  conditions.ReasonSucceeded,
+			Message: "No resource dependencies",
 			Claims:  []scorev1b1.ClaimSummary{},
 		}
 	}
