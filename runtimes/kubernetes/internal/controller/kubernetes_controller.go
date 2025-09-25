@@ -13,7 +13,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -46,7 +46,7 @@ func (r *KubernetesRuntimeReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	if err := r.Get(ctx, req.NamespacedName, plan); err == nil {
 		// This is a WorkloadPlan reconciliation
 		return r.reconcileWorkloadPlan(ctx, req, plan)
-	} else if !errors.IsNotFound(err) {
+	} else if !apierrors.IsNotFound(err) {
 		return ctrl.Result{}, err
 	}
 
@@ -55,7 +55,7 @@ func (r *KubernetesRuntimeReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	if err := r.Get(ctx, req.NamespacedName, we); err == nil {
 		// This is a WorkloadExposure reconciliation
 		return r.ReconcileWorkloadExposure(ctx, req)
-	} else if !errors.IsNotFound(err) {
+	} else if !apierrors.IsNotFound(err) {
 		return ctrl.Result{}, err
 	}
 
@@ -124,7 +124,12 @@ func (r *KubernetesRuntimeReconciler) ReconcileWorkloadExposure(ctx context.Cont
 	// 1. Get WorkloadExposure
 	we := &scorev1b1.WorkloadExposure{}
 	if err := r.Get(ctx, req.NamespacedName, we); err != nil {
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+		if apierrors.IsNotFound(err) {
+			// Orchestrator's Registrar hasn't created the Exposure yet, requeue to wait
+			logger.V(1).Info("WorkloadExposure not found, requeueing to wait for Registrar", "name", req.NamespacedName)
+			return ctrl.Result{RequeueAfter: 2 * time.Second}, nil
+		}
+		return ctrl.Result{}, err
 	}
 
 	// Skip non-kubernetes runtime classes
@@ -298,7 +303,7 @@ func (r *KubernetesRuntimeReconciler) getURLFromLoadBalancer(ctx context.Context
 	}
 
 	if err := r.Get(ctx, serviceKey, service); err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			return "", nil
 		}
 		return "", err
@@ -725,7 +730,7 @@ func (r *KubernetesRuntimeReconciler) updateWorkloadPlanStatus(ctx context.Conte
 
 	err := r.Get(ctx, deploymentKey, deployment)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			logger.V(1).Info("Deployment not found, setting status to Provisioning", "deployment", workloadName)
 			newPhase = scorev1b1.WorkloadPlanPhaseProvisioning
 			statusMessage = "Runtime resources are being provisioned"
@@ -762,7 +767,7 @@ func (r *KubernetesRuntimeReconciler) updateWorkloadPlanStatus(ctx context.Conte
 
 		err := r.Get(ctx, serviceKey, service)
 		if err != nil {
-			if errors.IsNotFound(err) {
+			if apierrors.IsNotFound(err) {
 				logger.V(1).Info("Service not found, runtime provisioning in progress", "service", workloadName)
 				serviceReady = false
 				newPhase = scorev1b1.WorkloadPlanPhaseProvisioning

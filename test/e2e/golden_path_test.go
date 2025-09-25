@@ -214,4 +214,65 @@ spec:
 			return readyStatus
 		}, time.Minute*3, time.Second*5).Should(Equal("True"))
 	})
+
+	It("should handle runtime publishing before WorkloadExposure exists (race condition)", func() {
+		By("Creating the Workload")
+		cmd := exec.Command("kubectl", "apply", "-f", workloadFile)
+		_, err := utils.Run(cmd)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("Waiting for WorkloadExposure to eventually be created by Registrar")
+		Eventually(func() bool {
+			cmd := exec.Command("kubectl", "get", "workloadexposure", "service-a", "-n", namespaceName, "-o", "name")
+			_, err := utils.Run(cmd)
+			return err == nil
+		}, time.Minute, time.Second*2).Should(BeTrue())
+
+		By("Verifying WorkloadExposure was created with correct runtime class")
+		cmd = exec.Command("kubectl", "get", "workloadexposure", "service-a", "-n", namespaceName,
+			"-o", "jsonpath={.spec.runtimeClass}")
+		output, err := utils.Run(cmd)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(strings.TrimSpace(output)).To(Equal("kubernetes"))
+
+		By("Waiting for WorkloadPlan creation (which might trigger runtime operations)")
+		Eventually(func() bool {
+			cmd := exec.Command("kubectl", "get", "workloadplan", "service-a", "-n", namespaceName, "-o", "name")
+			_, err := utils.Run(cmd)
+			return err == nil
+		}, time.Minute, time.Second).Should(BeTrue())
+
+		By("Waiting for Kubernetes Service to be created (runtime controller working)")
+		Eventually(func() bool {
+			cmd := exec.Command("kubectl", "get", "service", "service-a", "-n", namespaceName, "-o", "name")
+			_, err := utils.Run(cmd)
+			return err == nil
+		}, time.Minute, time.Second).Should(BeTrue())
+
+		By("Verifying WorkloadExposure status gets published despite potential race conditions")
+		Eventually(func() string {
+			cmd := exec.Command("kubectl", "get", "workloadexposure", "service-a", "-n", namespaceName,
+				"-o", "jsonpath={.status.exposures[0].url}")
+			output, err := utils.Run(cmd)
+			if err != nil {
+				return ""
+			}
+			return strings.TrimSpace(output)
+		}, time.Minute*2, time.Second*5).Should(ContainSubstring("service-a"))
+
+		By("Verifying final Workload endpoint is mirrored correctly")
+		Eventually(func() *string {
+			cmd := exec.Command("kubectl", "get", "workload", "service-a", "-n", namespaceName,
+				"-o", "jsonpath={.status.endpoint}")
+			output, err := utils.Run(cmd)
+			if err != nil {
+				return nil
+			}
+			endpoint := strings.TrimSpace(output)
+			if endpoint == "" || endpoint == "<no value>" {
+				return nil
+			}
+			return &endpoint
+		}, time.Minute*2, time.Second*5).ShouldNot(BeNil())
+	})
 })

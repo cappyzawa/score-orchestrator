@@ -5,6 +5,7 @@ resources:
 - bases/score.dev_workloads.yaml
 - bases/score.dev_resourceclaims.yaml
 - bases/score.dev_workloadplans.yaml
+- bases/score.dev_workloadexposures.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:
