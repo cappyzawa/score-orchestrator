@@ -30,6 +30,7 @@ import (
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
@@ -159,6 +160,9 @@ func (r *WorkloadExposureRegistrar) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&scorev1b1.Workload{}).
 		Owns(&scorev1b1.WorkloadExposure{}). // for GC awareness
+		// Watch WorkloadPlan to trigger Workload reconciliation when Plans are created
+		Watches(&scorev1b1.WorkloadPlan{},
+			handler.EnqueueRequestForOwner(mgr.GetScheme(), mgr.GetRESTMapper(), &scorev1b1.Workload{}, handler.OnlyControllerOwner())).
 		WithEventFilter(predicate.GenerationChangedPredicate{}).
 		Named("workload-exposure-registrar").
 		Complete(r)
