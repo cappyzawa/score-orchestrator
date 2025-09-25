@@ -155,7 +155,7 @@ func (sm *StatusManager) ComputeFinalStatus(
 	log := ctrl.LoggerFrom(ctx)
 
 	// Update RuntimeReady condition and endpoint based on plan
-	sm.updateRuntimeStatusFromPlan(ctx, workload, plan)
+	sm.updateRuntimeStatusFromPlan(workload, plan)
 
 	// Compute and set Ready condition
 	readyStatus, readyReason, readyMessage := sm.ComputeReadyCondition(workload.Status.Conditions)
@@ -180,12 +180,9 @@ func (sm *StatusManager) ComputeFinalStatus(
 
 // updateRuntimeStatusFromPlan updates RuntimeReady condition and endpoint based on WorkloadPlan
 func (sm *StatusManager) updateRuntimeStatusFromPlan(
-	ctx context.Context,
 	workload *scorev1b1.Workload,
 	plan *scorev1b1.WorkloadPlan,
 ) {
-	log := ctrl.LoggerFrom(ctx)
-
 	if plan == nil {
 		sm.SetRuntimeReadyCondition(
 			workload,
@@ -196,28 +193,8 @@ func (sm *StatusManager) updateRuntimeStatusFromPlan(
 		return
 	}
 
-	// Derive endpoint from WorkloadPlan
-	derivedEndpoint, err := sm.DeriveEndpoint(ctx, workload, plan)
-	if err != nil {
-		log.Error(err, "Failed to derive endpoint")
-		sm.SetRuntimeReadyCondition(
-			workload,
-			false,
-			conditions.ReasonProjectionError,
-			fmt.Sprintf("Failed to derive endpoint: %v", err),
-		)
-		return
-	}
-
 	// Note: ADR-0007 - Endpoint is now managed by ExposureMirrorReconciler only
 	// The Orchestrator no longer derives endpoints directly from WorkloadPlan
-	// Endpoint mirroring is handled by WorkloadExposure -> Workload status mirroring
-	//
-	// Update endpoint in status if derived (DISABLED per ADR-0007)
-	// if derivedEndpoint != nil && *derivedEndpoint != "" {
-	//     workload.Status.Endpoint = derivedEndpoint
-	//     log.V(1).Info("Derived endpoint", "endpoint", *derivedEndpoint)
-	// }
 
 	// Check runtime status from WorkloadPlan.Status
 	runtimeReady, reason, message := sm.checkRuntimeStatusFromPlan(plan)

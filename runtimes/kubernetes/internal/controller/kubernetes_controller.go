@@ -41,22 +41,37 @@ type KubernetesRuntimeReconciler struct {
 func (r *KubernetesRuntimeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
-	// First, try to get WorkloadPlan
+	// Try both resources to determine which one exists and should be processed
 	plan := &scorev1b1.WorkloadPlan{}
-	if err := r.Get(ctx, req.NamespacedName, plan); err == nil {
-		// This is a WorkloadPlan reconciliation
-		return r.reconcileWorkloadPlan(ctx, req, plan)
-	} else if !apierrors.IsNotFound(err) {
-		return ctrl.Result{}, err
+	planErr := r.Get(ctx, req.NamespacedName, plan)
+
+	we := &scorev1b1.WorkloadExposure{}
+	weErr := r.Get(ctx, req.NamespacedName, we)
+
+	// If both exist, check which one was updated more recently to determine precedence
+	if planErr == nil && weErr == nil {
+		if we.GetGeneration() > plan.GetGeneration() ||
+			we.GetResourceVersion() > plan.GetResourceVersion() {
+			// WorkloadExposure was updated more recently
+			return r.ReconcileWorkloadExposure(ctx, req)
+		} else {
+			// WorkloadPlan was updated more recently
+			return r.reconcileWorkloadPlan(ctx, req, plan)
+		}
 	}
 
-	// Then, try to get WorkloadExposure
-	we := &scorev1b1.WorkloadExposure{}
-	if err := r.Get(ctx, req.NamespacedName, we); err == nil {
-		// This is a WorkloadExposure reconciliation
+	// Only WorkloadPlan exists
+	if planErr == nil {
+		return r.reconcileWorkloadPlan(ctx, req, plan)
+	} else if !apierrors.IsNotFound(planErr) {
+		return ctrl.Result{}, planErr
+	}
+
+	// Only WorkloadExposure exists
+	if weErr == nil {
 		return r.ReconcileWorkloadExposure(ctx, req)
-	} else if !apierrors.IsNotFound(err) {
-		return ctrl.Result{}, err
+	} else if !apierrors.IsNotFound(weErr) {
+		return ctrl.Result{}, weErr
 	}
 
 	// Neither found, resource was deleted or doesn't exist

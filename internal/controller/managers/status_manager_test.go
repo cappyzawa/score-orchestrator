@@ -344,9 +344,8 @@ var _ = Describe("StatusManager", func() {
 				readyCondition := conditions.GetCondition(testWorkload.Status.Conditions, conditions.ConditionReady)
 				Expect(readyCondition).ToNot(BeNil())
 
-				// Check that endpoint was derived
-				Expect(testWorkload.Status.Endpoint).ToNot(BeNil())
-				Expect(*testWorkload.Status.Endpoint).To(ContainSubstring("test-workload.test-ns.svc.cluster.local"))
+				// Check that endpoint is NOT set per ADR-0007
+				Expect(testWorkload.Status.Endpoint).To(BeNil())
 
 				// Check that event was recorded for non-ready workload
 				Expect(mockRecorder.events).To(BeEmpty()) // Should be empty because workload is not ready
@@ -403,7 +402,7 @@ var _ = Describe("StatusManager", func() {
 
 				sm := NewStatusManager(fakeClient, scheme, mockRecorder, endpointDeriver)
 
-				sm.updateRuntimeStatusFromPlan(context.Background(), testWorkload, nil)
+				sm.updateRuntimeStatusFromPlan(testWorkload, nil)
 
 				// Check RuntimeReady condition
 				condition := conditions.GetCondition(testWorkload.Status.Conditions, conditions.ConditionRuntimeReady)
@@ -431,7 +430,7 @@ var _ = Describe("StatusManager", func() {
 					},
 				}
 
-				sm.updateRuntimeStatusFromPlan(context.Background(), testWorkload, plan)
+				sm.updateRuntimeStatusFromPlan(testWorkload, plan)
 
 				// Check RuntimeReady condition
 				condition := conditions.GetCondition(testWorkload.Status.Conditions, conditions.ConditionRuntimeReady)
@@ -439,9 +438,8 @@ var _ = Describe("StatusManager", func() {
 				Expect(condition.Status).To(Equal(metav1.ConditionFalse))
 				Expect(condition.Reason).To(Equal("RuntimeSelecting"))
 
-				// Check endpoint was set
-				Expect(testWorkload.Status.Endpoint).ToNot(BeNil())
-				Expect(*testWorkload.Status.Endpoint).To(ContainSubstring("test-workload.test-ns.svc.cluster.local"))
+				// Check endpoint is NOT set per ADR-0007
+				Expect(testWorkload.Status.Endpoint).To(BeNil())
 			})
 
 			It("should set runtime status based on WorkloadPlan.Status.Phase", func() {
@@ -506,7 +504,7 @@ var _ = Describe("StatusManager", func() {
 					// Reset workload conditions
 					testWorkload.Status.Conditions = []metav1.Condition{}
 
-					sm.updateRuntimeStatusFromPlan(context.Background(), testWorkload, plan)
+					sm.updateRuntimeStatusFromPlan(testWorkload, plan)
 
 					// Check RuntimeReady condition
 					condition := conditions.GetCondition(testWorkload.Status.Conditions, conditions.ConditionRuntimeReady)

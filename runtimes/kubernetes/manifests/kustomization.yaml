@@ -11,7 +11,7 @@ resources:
 
 images:
 - name: ghcr.io/cappyzawa/score-orchestrator/kubernetes-runtime
-  newName: kubernetes-runtime
+  newName: test-runtime
   newTag: latest
 
 commonLabels:
