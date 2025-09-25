@@ -195,6 +195,8 @@ func (r *KubernetesRuntimeReconciler) ReconcileWorkloadExposure(ctx context.Cont
 	exposureType := "ingress"
 	if strings.Contains(exposureURL, "svc.cluster.local") {
 		exposureType = "service"
+	} else if strings.Contains(exposureURL, "localhost") {
+		exposureType = "port-forward"
 	} else if strings.Contains(exposureURL, ":") && !strings.Contains(exposureURL, "://") {
 		exposureType = "loadbalancer"
 	}
@@ -250,8 +252,14 @@ func (r *KubernetesRuntimeReconciler) generateCanonicalURL(ctx context.Context, 
 		return lbURL, nil
 	}
 
-	// Priority 3: For now, do not publish ClusterIP/NodePort URLs
-	// as they are not externally accessible or stable
+	// Priority 3: ClusterIP services (localhost with port-forward)
+	if clusterURL, err := r.getURLFromClusterIP(ctx, workloadName, namespace); err != nil {
+		return "", fmt.Errorf("failed to check cluster IP: %w", err)
+	} else if clusterURL != "" {
+		return clusterURL, nil
+	}
+
+	// Priority 4: For now, do not publish NodePort URLs
 	// TODO: Add NodePort support when external access is confirmed
 	return "", nil
 }
@@ -338,6 +346,39 @@ func (r *KubernetesRuntimeReconciler) getURLFromLoadBalancer(ctx context.Context
 
 	// Construct URL (assume HTTP for now, could be enhanced to detect HTTPS)
 	exposureURL := fmt.Sprintf("http://%s:%d", host, port)
+	return exposureURL, nil
+}
+
+// getURLFromClusterIP checks for ClusterIP Service and returns localhost URL for port-forward
+func (r *KubernetesRuntimeReconciler) getURLFromClusterIP(ctx context.Context, workloadName, namespace string) (string, error) {
+	service := &corev1.Service{}
+	serviceKey := types.NamespacedName{
+		Name:      workloadName,
+		Namespace: namespace,
+	}
+
+	if err := r.Get(ctx, serviceKey, service); err != nil {
+		if apierrors.IsNotFound(err) {
+			return "", nil
+		}
+		return "", err
+	}
+
+	// Only handle ClusterIP type services
+	if service.Spec.Type != corev1.ServiceTypeClusterIP {
+		return "", nil
+	}
+
+	// Check if service has ports
+	if len(service.Spec.Ports) == 0 {
+		return "", nil
+	}
+
+	// Use the first port for URL construction
+	port := service.Spec.Ports[0].Port
+
+	// Construct localhost URL for port-forward usage
+	exposureURL := fmt.Sprintf("http://localhost:%d", port)
 	return exposureURL, nil
 }
 
