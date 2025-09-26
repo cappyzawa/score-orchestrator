@@ -9,6 +9,7 @@ rules:
   resources:
   - configmaps
   - secrets
+  - services
   verbs:
   - create
   - delete
@@ -24,6 +25,26 @@ rules:
   verbs:
   - create
   - patch
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - networking.k8s.io
+  resources:
+  - ingresses
+  verbs:
+  - get
+  - list
+  - watch
 - apiGroups:
   - score.dev
   resources:
@@ -52,19 +73,24 @@ rules:
 - apiGroups:
   - score.dev
   resources:
-  - workloadexposures/status
-  verbs:
-  - get
-  - watch
-- apiGroups:
-  - score.dev
-  resources:
+  - workloadexposures/finalizers
+  - workloadplans/finalizers
   - workloads/finalizers
   verbs:
   - update
 - apiGroups:
   - score.dev
   resources:
+  - workloadexposures/status
+  verbs:
+  - get
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - score.dev
+  resources:
+  - workloadplans/status
   - workloads/status
   verbs:
   - get
