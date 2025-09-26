@@ -21,29 +21,38 @@ You'll learn how the orchestrator manages the **Workload → ResourceClaim → W
    cd score-orchestrator
    ```
 
-2. **Install CRDs into your cluster**:
+2. **Create a Kind cluster**:
+   ```bash
+   # Create a new Kind cluster for testing
+   kind create cluster --name score-demo
+
+   # Verify cluster is ready
+   kubectl cluster-info --context kind-score-demo
+   ```
+
+3. **Install CRDs into your cluster**:
    ```bash
    make install
    ```
 
-3. **Build and load controller images**:
+4. **Build and load controller images**:
    ```bash
-   # Build the orchestrator controller image with correct name
+   # Build the orchestrator controller image
    make docker-build IMG=example.com/kbinit:latest
 
-   # Load image into Kind cluster (adjust cluster name if different)
-   kind load docker-image example.com/kbinit:latest --name <your-cluster-name>
+   # Load image into Kind cluster
+   kind load docker-image example.com/kbinit:latest --name score-demo
 
    # Build the Kubernetes runtime controller image
    make docker-build-runtime
 
    # Load runtime image into Kind cluster
-   kind load docker-image kubernetes-runtime:latest --name <your-cluster-name>
+   kind load docker-image kubernetes-runtime:latest --name score-demo
    ```
 
-4. **Deploy the controllers**:
+5. **Deploy the controllers**:
    ```bash
-   # Deploy the orchestrator controller with correct image
+   # Deploy the orchestrator controller
    make deploy IMG=example.com/kbinit:latest
 
    # Deploy the Kubernetes runtime controller
@@ -53,7 +62,7 @@ You'll learn how the orchestrator manages the **Workload → ResourceClaim → W
    kubectl apply -f test/e2e/fixtures/orchestrator-config.yaml
    ```
 
-5. **Verify installation**:
+6. **Verify installation**:
    ```bash
    # Check CRDs are installed
    kubectl get crds | grep score.dev
@@ -120,6 +129,34 @@ Let's start with a simple web application using Score's official sample image.
    - A `Service` exposing the specified ports
    - Pod(s) running the application
 
+5. **Access the application**:
+   ```bash
+   # Wait for the pod to be ready
+   kubectl wait --for=condition=ready pod -l app=hello-web --timeout=300s
+
+   # Set up port forwarding to access the application
+   kubectl port-forward service/hello-web 8080:8080 &
+
+   # Test the application with curl
+   curl http://localhost:8080
+   ```
+
+   You should see a response like:
+   ```
+   SQL VERSION: PostgreSQL 16.1 on aarch64-unknown-linux-musl, compiled by gcc (Alpine 13.2.1_git20231014) 13.2.1 20231014, 64-bit
+   ```
+
+   And the response headers will include:
+   ```
+   X-Env: kubernetes
+   ```
+
+   To stop port forwarding:
+   ```bash
+   # Find and kill the port-forward process
+   pkill -f "kubectl port-forward"
+   ```
+
 ### Understanding the Status
 
 The workload status provides these key pieces of information:
@@ -143,7 +180,7 @@ When you apply a Workload, the orchestrator:
 
 ## Add a Dependency (Application + Postgres)
 
-Now let's make it more interesting by adding a database dependency.
+Now let's make it more interesting by adding a database dependency. This will demonstrate how the orchestrator provisions a **development-grade PostgreSQL instance** and binds it to your application.
 
 1. **Apply the enhanced workload**:
    ```bash
@@ -159,7 +196,7 @@ Now let's make it more interesting by adding a database dependency.
    kubectl get resourceclaim.score.dev -w
    ```
 
-3. **Observe the new condition and resource creation**:
+3. **Observe PostgreSQL provisioning**:
    ```bash
    # Watch the workload status
    kubectl get workload node-postgres-app -o yaml
@@ -170,12 +207,55 @@ Now let's make it more interesting by adding a database dependency.
    # Inspect the claim details
    kubectl describe resourceclaim.score.dev <claim-name>
 
+   # Verify PostgreSQL StatefulSet is created
+   kubectl get statefulset
+
+   # Check PostgreSQL Service
+   kubectl get service | grep postgres
+
+   # Verify PostgreSQL pod is running
+   kubectl get pods | grep postgres
+   ```
+
+4. **Verify application deployment with database connection**:
+   ```bash
    # Verify the WorkloadPlan includes environment variable mappings
    kubectl get workloadplan node-postgres-app -o yaml
 
    # Check that Kubernetes resources are created with environment variables
    kubectl get deployment node-postgres-app -o yaml | grep -A 10 env:
+
+   # Wait for both application and database to be ready
+   kubectl wait --for=condition=ready pod -l app=node-postgres-app --timeout=300s
+   kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=postgres --timeout=300s
    ```
+
+5. **Access the application with database**:
+   ```bash
+   # Set up port forwarding to access the application
+   kubectl port-forward service/node-postgres-app 8080:8080 &
+
+   # Test the application - it should now be able to connect to PostgreSQL
+   curl http://localhost:8080
+
+   # Use -i flag to see headers
+   curl -i http://localhost:8080
+
+   # Stop port forwarding when done
+   pkill -f "kubectl port-forward"
+   ```
+
+   You should see a response like:
+   ```
+   SQL VERSION: PostgreSQL 16.1 on aarch64-unknown-linux-musl, compiled by gcc (Alpine 13.2.1_git20231014) 13.2.1 20231014, 64-bit
+   ```
+
+   And the response headers will include:
+   ```
+   X-Env: kubernetes
+   ```
+
+   This confirms that the application successfully connected to the PostgreSQL database that was automatically provisioned by the orchestrator.
 
    The workload now shows a `ClaimsReady` condition that tracks dependency status.
 
@@ -272,6 +352,12 @@ When you're done experimenting:
    kubectl get resourceclaim.score.dev
 
    # Should show no claims or only claims from other workloads
+   ```
+
+3. **Delete the Kind cluster** (optional):
+   ```bash
+   # Delete the entire cluster when you're completely done
+   kind delete cluster --name score-demo
    ```
 
 The orchestrator automatically handles cleanup of associated `ResourceClaim` and `WorkloadPlan` resources through Kubernetes owner references.
