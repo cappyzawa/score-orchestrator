@@ -155,6 +155,134 @@ provisioners:
     params: object
 ```
 
+### Multi-Cloud Provider Selection
+
+The provisioner system supports **provider-specific provisioning** through `params`-based hint system, allowing users to specify cloud providers while platform teams maintain control over implementation details.
+
+#### User Experience
+
+Users can specify provider preferences and requirements through `Workload.spec.resources[].params`:
+
+```yaml
+# AWS RDS preference
+spec:
+  resources:
+    db:
+      type: postgres
+      params:
+        provider: "aws"
+        instance_class: "db.r5.large"  # AWS-specific parameter
+        multi_az: true
+
+# GCP Cloud SQL preference
+spec:
+  resources:
+    db:
+      type: postgres
+      params:
+        provider: "gcp"
+        tier: "db-standard-2"          # GCP-specific parameter
+        availability_type: "REGIONAL"
+
+# Default (platform team decides)
+spec:
+  resources:
+    db:
+      type: postgres
+      # No params = platform default
+```
+
+#### Platform Configuration
+
+Platform teams configure multiple provisioners for the same resource type with **selector-based routing**:
+
+```yaml
+provisioners:
+# AWS RDS provisioner
+- type: postgres
+  selector:
+    params:
+      provider: "aws"
+  config:
+    strategy: external-api
+    externalApi:
+      endpoint: "https://rds.amazonaws.com"
+      # AWS-specific configuration
+    outputs:
+      host: "{{.response.endpoint}}"
+      # Template uses params for AWS-specific logic
+      connection_string: "postgresql://{{.params.username}}:{{.secret.password}}@{{.response.endpoint}}:5432/{{.params.database}}"
+
+# GCP Cloud SQL provisioner
+- type: postgres
+  selector:
+    params:
+      provider: "gcp"
+  config:
+    strategy: external-api
+    externalApi:
+      endpoint: "https://sqladmin.googleapis.com"
+      # GCP-specific configuration
+
+# Default/Development provisioner (fallback)
+- type: postgres
+  # No selector = matches when no other selectors match
+  config:
+    strategy: manifests
+    manifests:
+      # StatefulSet implementation for development
+```
+
+#### Provider Parameter Normalization
+
+Platform teams can normalize provider-specific parameters while respecting user preferences:
+
+```yaml
+- type: postgres
+  selector:
+    params:
+      provider: "aws"
+  config:
+    # Normalize user params to AWS API format
+    externalApi:
+      request:
+        DBInstanceClass: "{{.params.instance_class | default 'db.t3.micro'}}"
+        MultiAZ: "{{.params.multi_az | default false}}"
+        # Platform enforces security requirements
+        StorageEncrypted: true
+        # Organization standards override user preferences
+        BackupRetentionPeriod: "{{.params.backup_retention | default 7 | min 30}}"
+```
+
+#### Selection Logic
+
+**Provisioner Selection Priority:**
+1. **Exact param match**: Provisioner with matching `selector.params`
+2. **Partial param match**: Provisioner with subset of user params
+3. **Default fallback**: Provisioner without selector (platform default)
+
+**Error Handling:**
+- Unknown provider → `ResourceClaimPhaseFailed` with available options
+- Invalid provider params → `ResourceClaimPhaseFailed` with validation details
+- No matching provisioner → `ResourceClaimPhaseFailed` with configuration guidance
+
+#### Cross-Cloud Portability
+
+The same workload specification can run across different clouds with environment-specific provisioner configurations:
+
+```bash
+# Development cluster (uses StatefulSet)
+kubectl apply -f workload.yaml
+
+# AWS production cluster (uses RDS)
+kubectl apply -f workload.yaml  # Same file!
+# Platform config automatically routes to AWS provisioner
+
+# GCP production cluster (uses Cloud SQL)
+kubectl apply -f workload.yaml  # Same file!
+# Platform config automatically routes to GCP provisioner
+```
+
 ### ClassSpec
 
 Defines available service tiers/sizes for a resource type.
