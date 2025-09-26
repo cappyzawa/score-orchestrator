@@ -1,0 +1,14 @@
+apiVersion: score.dev/v1b1
+kind: Workload
+metadata:
+  name: hello-web
+  namespace: default
+spec:
+  containers:
+    app:
+      image: ghcr.io/score-spec/sample-app-gif:main
+  service:
+    ports:
+      - port: 8080
+        targetPort: 8080
+        protocol: TCP

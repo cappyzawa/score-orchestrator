@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: orchestrator-config
+  namespace: score-system
+data:
+  config.yaml: |
+    apiVersion: score.dev/v1b1
+    kind: OrchestratorConfig
+    metadata:
+      name: simple-config
+      version: "1.0.0"
+    spec:
+      profiles:
+      - name: web-service
+        description: "Simple web applications"
+        backends:
+        - backendId: k8s-simple
+          runtimeClass: kubernetes
+          template:
+            kind: inline
+            values:
+              replicas: 1
+          priority: 100
+          version: "1.0.0"
+      defaults:
+        profile: web-service

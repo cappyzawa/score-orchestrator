@@ -1,0 +1,24 @@
+apiVersion: score.dev/v1b1
+kind: Workload
+metadata:
+  name: node-postgres-app
+  namespace: default
+spec:
+  containers:
+    app:
+      image: ghcr.io/score-spec/sample-app-gif:main
+      variables:
+        DATABASE_URL: "postgresql://${resources.db.username}:${resources.db.password}@${resources.db.host}:${resources.db.port}/${resources.db.name}"
+        DB_HOST: "${resources.db.host}"
+        DB_PORT: "${resources.db.port}"
+        DB_NAME: "${resources.db.name}"
+        DB_USER: "${resources.db.username}"
+        DB_PASSWORD: "${resources.db.password}"
+  service:
+    ports:
+      - port: 8080
+        targetPort: 8080
+        protocol: TCP
+  resources:
+    db:
+      type: postgres

@@ -23,6 +23,7 @@ When required outputs from `ResourceClaim` resolvers contain unresolved `${...}`
 - **RBAC by default** — users see only `Workload`
 
 ## Documentation
+- **Getting Started**: [`docs/guides/getting-started.md`](docs/guides/getting-started.md)
 - Spec & APIs: [`docs/spec/crds.md`](docs/spec/crds.md)
 - Controllers & responsibilities: [`docs/spec/control-plane.md`](docs/spec/control-plane.md)
 - Lifecycle & state: [`docs/spec/lifecycle.md`](docs/spec/lifecycle.md)
