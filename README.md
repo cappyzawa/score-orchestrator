@@ -11,6 +11,7 @@ Score defines a portable way to describe applications. This project provides a s
 - Internal contracts for platform use: `ResourceClaim`, `WorkloadPlan`
 - Status is abstract and user-centric (a single `endpoint`, abstract `conditions`, claim summaries)
 - Validation boundary: **CRD OpenAPI + CEL** for spec invariants; org policy via **VAP/OPA/Kyverno**
+- **Development-grade provisioning** for databases and services (aligned with score-k8s approach)
 
 ## What happens when dependencies are not ready?
 When required outputs from `ResourceClaim` resolvers contain unresolved `${...}` placeholders, the Orchestrator detects this before emitting a `WorkloadPlan`. Instead of passing unresolved values to the runtime, it sets `Workload.status` with `RuntimeReady=False` and `Reason=ProjectionError`. Once resolver outputs are complete, the Orchestrator emits the Plan and the Workload converges to Ready.
