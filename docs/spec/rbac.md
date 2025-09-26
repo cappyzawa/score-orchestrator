@@ -92,10 +92,30 @@ rules:
 The Orchestrator Controller requires comprehensive permissions as the central coordination component.
 
 **Core Responsibilities:**
-- **Exclusive writer** of `Workload.status`
+- **Co-writer** of `Workload.status` (with ExposureMirror Controller)
 - Creator and manager of `ResourceClaim` and `WorkloadPlan` resources
 - Reader of **Orchestrator Config** (ConfigMap/OCI) for governance application
 - Event publisher for audit and debugging
+
+### WorkloadExposureRegistrar Controller
+
+The WorkloadExposureRegistrar Controller ensures WorkloadExposure resources exist for each Workload.
+
+**Core Responsibilities:**
+- **Exclusive writer** of `WorkloadExposure.spec`
+- Watches `Workload` for changes and creates corresponding `WorkloadExposure` resources
+- Uses OwnerReference for automatic garbage collection
+- Event publisher for registration activities
+
+### ExposureMirror Controller
+
+The ExposureMirror Controller mirrors Runtime-published endpoints to user-visible status.
+
+**Core Responsibilities:**
+- **Co-writer** of `Workload.status` (endpoint and conditions only)
+- Watches `WorkloadExposure.status` for Runtime-published endpoints
+- Normalizes Runtime-specific conditions to abstract user-facing conditions
+- Event publisher for endpoint mirroring activities
 
 **Required ClusterRole:**
 ```yaml
@@ -104,7 +124,7 @@ kind: ClusterRole
 metadata:
   name: score-orchestrator
 rules:
-# Workload management (read spec, write status exclusively)
+# Workload management (read spec, co-write status)
 - apiGroups: ["score.dev"]
   resources: ["workloads"]
   verbs: ["get", "list", "watch"]
@@ -113,11 +133,66 @@ rules:
   verbs: ["get", "list", "update", "patch"]
 # Internal resource management
 - apiGroups: ["score.dev"]
-  resources: ["resourceclaims", "workloadplans", "workloadexposures"]
+  resources: ["resourceclaims", "workloadplans"]
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 - apiGroups: ["score.dev"]
-  resources: ["resourceclaims/status", "workloadexposures/status"]
+  resources: ["resourceclaims/status"]
   verbs: ["get", "list", "watch"]
+# Event publishing
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create", "patch"]
+```
+
+**Required ClusterRole for WorkloadExposureRegistrar:**
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: score-workload-exposure-registrar
+rules:
+# Workload watching (for triggering registration)
+- apiGroups: ["score.dev"]
+  resources: ["workloads"]
+  verbs: ["get", "list", "watch"]
+# WorkloadPlan watching (for triggering Workload reconciliation)
+- apiGroups: ["score.dev"]
+  resources: ["workloadplans"]
+  verbs: ["get", "list", "watch"]
+# WorkloadExposure spec management
+- apiGroups: ["score.dev"]
+  resources: ["workloadexposures"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["score.dev"]
+  resources: ["workloadexposures/status"]
+  verbs: ["get", "list", "watch"]
+# Event publishing
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create", "patch"]
+```
+
+**Required ClusterRole for ExposureMirror:**
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: score-exposure-mirror
+rules:
+# WorkloadExposure watching (primary trigger)
+- apiGroups: ["score.dev"]
+  resources: ["workloadexposures"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["score.dev"]
+  resources: ["workloadexposures/status"]
+  verbs: ["get", "list"]
+# Workload status mirroring
+- apiGroups: ["score.dev"]
+  resources: ["workloads"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["score.dev"]
+  resources: ["workloads/status"]
+  verbs: ["get", "list", "update", "patch"]
 # Event publishing
 - apiGroups: [""]
   resources: ["events"]
@@ -127,11 +202,12 @@ rules:
 The Orchestrator **must be able to read its configuration** (e.g., a ConfigMap in the control namespace) and/or fetch OCI artifacts referenced by that config.
 
 **Security Constraints:**
-- **Cannot** create or modify `Workload` resources (prevents unauthorized workload injection)
-- **Cannot** write to `ResourceClaim.status` (prevents claim state corruption)
-- **Must** verify OwnerReference before creating internal resources
-- **Should** implement leader election for high availability
-- **Does not need** Services/Ingresses read access for endpoint logic (uses runtime-only mirror)
+- **Orchestrator:** Cannot create or modify `Workload` resources; cannot write to `ResourceClaim.status`
+- **WorkloadExposureRegistrar:** Cannot write to `WorkloadExposure.status`; must verify OwnerReference
+- **ExposureMirror:** Cannot write to `ResourceClaim` or `WorkloadPlan`; only mirrors endpoint/conditions
+- **All Controllers:** Must verify OwnerReference before creating/processing internal resources
+- **All Controllers:** Should implement leader election for high availability
+- **Separation:** ExposureMirror handles endpoint logic; Orchestrator does not need direct Service/Ingress access
 
 ### Runtime Controllers
 

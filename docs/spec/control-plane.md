@@ -36,16 +36,31 @@ It complements:
 ### Runtime Controller (PF)
 - **Watches:** `WorkloadPlan` (primary), `ResourceClaim` (consume `status.outputs`), `Workload` (labels/metadata)
 - **Creates/updates (objects):** runtime-specific child resources (e.g., Deployments/Services/etc. on Kubernetes)
-- **Updates (status):** *Does not write* `Workload.status`; may write its own internal report CR
+- **Updates (status):** *Does not write* `Workload.status`; **writes `WorkloadExposure.status`** (endpoint publication)
 - **Finalization:** Cleans up runtime children when `WorkloadPlan` changes or is deleted
+
+### WorkloadExposureRegistrar Controller (Orchestrator)
+- **Watches:** `Workload` (primary), `WorkloadPlan` (for triggering Workload reconciliation)
+- **Creates/updates (spec):** `WorkloadExposure` — same name as target Workload (OwnerRef = Workload)
+- **Responsibility:** Ensures every Workload has a corresponding `WorkloadExposure` with current spec
+- **Updates (status):** *Does not write* any status fields
+- **Finalization:** Uses OwnerReference for automatic cleanup via garbage collection
+
+### ExposureMirror Controller (Orchestrator)
+- **Watches:** `WorkloadExposure` (primary)
+- **Reads:** `Workload` (target of mirroring)
+- **Updates (status):** **`Workload.status`** — mirrors `endpoint` and normalized `conditions` from WorkloadExposure
+- **Responsibility:** Single-direction mirroring from WorkloadExposure status to Workload status
+- **Authority:** Cooperates with main Orchestrator as co-writer of `Workload.status`
 
 ## Resource-centric matrix (who reads/writes what)
 
 | Resource (`score.dev/v1b1`) | Read/watch                                 | Write (spec/create)           | Write (status)            | Notes |
 |---|---|---|---|---|
-| `Workload` (public)         | Orchestrator, Runtime                      | Users only                    | **Orchestrator only**     | Orchestrator attaches a finalizer to control deletion order |
+| `Workload` (public)         | Orchestrator, ExposureMirror, WorkloadExposureRegistrar, Runtime | Users only                    | **Orchestrator + ExposureMirror** | Orchestrator attaches a finalizer; ExposureMirror handles endpoint/conditions |
 | `ResourceClaim` (internal) | Orchestrator, Provisioner, Runtime       | **Orchestrator**              | **Provisioner**           | One per `resources.<key>` |
-| `WorkloadPlan` (internal)   | Runtime, Orchestrator                      | **Orchestrator** (single writer) | —                      | Same name as Workload; OwnerRef = Workload |
+| `WorkloadPlan` (internal)   | Runtime, Orchestrator, WorkloadExposureRegistrar | **Orchestrator** (single writer) | —                      | Same name as Workload; OwnerRef = Workload |
+| `WorkloadExposure` (internal) | ExposureMirror, WorkloadExposureRegistrar, Runtime | **WorkloadExposureRegistrar** | **Runtime Controllers**   | Same name as Workload; OwnerRef = Workload; hidden from users |
 | `Secret/ConfigMap` (outputs) | Runtime (read), Orchestrator (not required) | **Provisioner**              | —                         | Same namespace; hidden from users |
 
 ## Claim ↔ Plan linkage (how they meet)

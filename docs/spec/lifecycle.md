@@ -169,14 +169,16 @@ Runtime Controllers manage platform-specific resources but report status through
 
 ### WorkloadExposure Creation and Management
 
-After successful WorkloadPlan generation, the Orchestrator creates a `WorkloadExposure` resource to coordinate endpoint publication with Runtime Controllers:
+The WorkloadExposure resource is managed through a dedicated controller flow:
 
-#### Orchestrator Actions
-1. **WorkloadExposure Creation**: Create `WorkloadExposure` resource with:
-   - `spec.workloadRef`: Reference to target Workload
+#### WorkloadExposureRegistrar Controller Actions
+1. **Workload Monitoring**: Watches `Workload` resources for creation/updates
+2. **WorkloadExposure Registration**: For each Workload, creates corresponding `WorkloadExposure` with:
+   - `spec.workloadRef`: Reference to target Workload (with UID for identity)
    - `spec.runtimeClass`: Selected runtime (e.g., `kubernetes`, `ecs`, `nomad`)
-   - `spec.observedWorkloadGeneration`: For causality tracking
-2. **Spec-only Creation**: Orchestrator writes only the spec; status remains empty
+   - `spec.observedWorkloadGeneration`: Tracks Workload changes for causality
+3. **Spec-only Management**: WorkloadExposureRegistrar writes only the spec; status remains empty
+4. **Lifecycle Coupling**: Uses OwnerReference for automatic cleanup when Workload is deleted
 
 #### Runtime Controller Actions
 Once the Runtime Controller successfully materializes platform resources and determines exposure endpoints:
@@ -198,9 +200,18 @@ Once the Runtime Controller successfully materializes platform resources and det
    ```
 3. **Authority**: Runtime Controller is the **sole writer** of `WorkloadExposure.status`
 
+#### ExposureMirror Controller Actions
+The ExposureMirror Controller provides the final step in the endpoint reflection flow:
+
+1. **WorkloadExposure Monitoring**: Watches `WorkloadExposure.status` for Runtime-published endpoints
+2. **Endpoint Mirroring**: Mirrors `exposures[0].url` to `Workload.status.endpoint` after validation
+3. **Condition Normalization**: Converts Runtime-specific conditions to abstract user-facing conditions
+4. **Identity Verification**: Validates `workloadRef.uid` to prevent stale updates from recreated resources
+5. **Generation Guards**: Uses `observedWorkloadGeneration` to ignore outdated exposure data
+
 ### Orchestrator Status Aggregation
 
-The Orchestrator continuously monitors all dependent resources and maintains the **single source of truth** for `Workload.status`:
+The main Orchestrator Controller and ExposureMirror Controller coordinate to maintain the **single source of truth** for `Workload.status`:
 
 #### Ready Computation Logic
 

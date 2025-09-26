@@ -34,11 +34,12 @@ Each item in `status.exposures[]`:
 
 ## Mirror Process
 
-### Step 1: WorkloadExposure Creation
-After successful WorkloadPlan generation, the Orchestrator:
-1. Creates `WorkloadExposure` with populated spec
-2. Sets OwnerReference to target Workload
-3. Leaves status empty (Runtime Controller will populate)
+### Step 1: WorkloadExposure Registration
+The WorkloadExposureRegistrar Controller:
+1. Watches `Workload` resources for creation/updates
+2. Creates corresponding `WorkloadExposure` with populated spec
+3. Sets OwnerReference to target Workload
+4. Leaves status empty (Runtime Controller will populate)
 
 ### Step 2: Runtime Publication
 Runtime Controllers:
@@ -47,12 +48,13 @@ Runtime Controllers:
 3. Update `WorkloadExposure.status.exposures[]` with discovered endpoints
 4. Set appropriate conditions reflecting exposure status
 
-### Step 3: Orchestrator Mirror
-The Orchestrator:
+### Step 3: Endpoint Mirroring
+The ExposureMirror Controller:
 1. Watches `WorkloadExposure.status` changes
 2. Validates `exposures[0].url` as a well-formed URI
 3. Mirrors the URL to `Workload.status.endpoint` (no modification)
 4. Maps Runtime conditions to abstract reasons on `Workload.status.conditions`
+5. Performs identity verification via `workloadRef.uid` to prevent stale updates
 
 ## Mirror Rules
 
@@ -87,16 +89,26 @@ To avoid unnecessary status updates:
 
 ## Authority Model
 
-### Single Writers
-- **Orchestrator**: Exclusive writer of `Workload.status`
+### Controller Responsibilities
+- **WorkloadExposureRegistrar**: Exclusive writer of `WorkloadExposure.spec`
+- **ExposureMirror**: Co-writer of `Workload.status` (endpoint and conditions only)
+- **Main Orchestrator**: Co-writer of `Workload.status` (claims, other conditions)
 - **Runtime Controllers**: Exclusive writer of `WorkloadExposure.status`
-- **No shared ownership**: Clean separation of responsibilities
+- **Clear separation**: Each controller has distinct, non-overlapping write authority
 
 ### RBAC Requirements
 
-**Orchestrator permissions:**
-- `workloadexposures`: get, list, watch, create, delete
+**WorkloadExposureRegistrar permissions:**
+- `workloads`: get, list, watch
+- `workloadplans`: get, list, watch
+- `workloadexposures`: get, list, watch, create, update, patch, delete
 - `workloadexposures/status`: get, list, watch (read-only)
+
+**ExposureMirror permissions:**
+- `workloadexposures`: get, list, watch
+- `workloadexposures/status`: get, list (read-only)
+- `workloads`: get, list, watch
+- `workloads/status`: get, list, update, patch (endpoint/conditions writer)
 
 **Runtime Controller permissions:**
 - `workloadexposures`: get, list, watch

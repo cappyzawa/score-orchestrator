@@ -311,33 +311,52 @@ Affected fields:
 ### Purpose
 Internal coordination resource for Runtime Controllers to publish endpoints back to the Orchestrator. This enables the **runtime-only mirror** model where only Runtime-published endpoints surface in user status.
 
-### Contract (conceptual)
+### Ownership & Control Flow
+1. **WorkloadExposureRegistrar Controller** creates/updates the `spec` for each `Workload`
+2. **Runtime Controllers** write to the `status` to publish endpoints and conditions
+3. **ExposureMirror Controller** mirrors `status` back to `Workload.status.endpoint` and conditions
+4. **Hidden from users** via RBAC (internal orchestration only)
 
-**WorkloadExposure (spec)** — written by Orchestrator
+### Required/Optional Summary
+
+**WorkloadExposure (spec)** — written by WorkloadExposureRegistrar
 | Field                         | Req     | Notes                              |
 | ----------------------------- | ------- | ---------------------------------- |
-| `workloadRef`                 | **Yes** | Reference to target Workload       |
+| `workloadRef.name`            | **Yes** | Target Workload name               |
+| `workloadRef.namespace`       | No      | Target Workload namespace (defaults to same) |
+| `workloadRef.uid`             | No      | Strong identity check (prevents rename confusion) |
 | `runtimeClass`                | **Yes** | Selected runtime (kubernetes/ecs/nomad) |
-| `observedWorkloadGeneration`  | **Yes** | For causality tracking             |
+| `observedWorkloadGeneration`  | **Yes** | Tracks Workload changes for causality |
 
 **WorkloadExposure (status)** — written **only** by Runtime Controllers
 | Field        | Req     | Notes                              |
 | ------------ | ------- | ---------------------------------- |
-| `exposures`  | No      | Array of published endpoints       |
-| `conditions` | **Yes** | Runtime-specific conditions        |
+| `exposures`  | No      | Array of published endpoints (ordered by priority) |
+| `conditions` | **Yes** | Runtime-specific conditions (normalized by ExposureMirror) |
 
-#### ExposureSpec (conceptual)
+### Spec (written by WorkloadExposureRegistrar)
+- **`workloadRef`**: Reference to the target Workload with optional strong identity checking via UID
+- **`runtimeClass`**: The runtime selected by the Orchestrator (e.g., `kubernetes`, `ecs`, `nomad`)
+- **`observedWorkloadGeneration`**: Used for causality tracking to ensure Runtime operates on current Workload spec
+
+### Status (written by Runtime Controllers)
+#### ExposureEntry
 Each item in `status.exposures[]`:
-- **`url`** (required): string (format: uri, e.g., `https://app.example.com`)
-- `priority` (optional): int (higher wins; defaults to 0)
-- `scope` (optional): string (`Public`/`ClusterLocal`/`VPC`/`Other`)
-- `schemeHint` (optional): string (`HTTP`/`HTTPS`/`GRPC`/`TCP`/`OTHER`)
-- `reachable` (optional): bool|null (endpoint health status)
+- **`url`** (required): string (format: uri, e.g., `https://app.example.com`, `http://service.namespace:8080`)
+- `priority` (optional): int (higher priority wins for `Workload.status.endpoint`; defaults to 0)
+- `scope` (optional): string (`Public`/`ClusterLocal`/`VPC`/`Other`) — visibility hint
+- `schemeHint` (optional): string (`HTTP`/`HTTPS`/`GRPC`/`TCP`/`OTHER`) — protocol hint
+- `reachable` (optional): bool|null (endpoint health status from runtime perspective)
 
-### Authority and Visibility
-- **Hidden from users**: No direct access via RBAC
-- **Runtime authority**: Only Runtime Controllers write `status`
-- **Orchestrator coordination**: Orchestrator mirrors `exposures[0].url` to `Workload.status.endpoint`
+#### Conditions
+Standard Kubernetes-style conditions written by Runtime Controllers. These are normalized by the ExposureMirror Controller before being reflected to `Workload.status.conditions`.
+
+### Authority and Mirroring
+- **Spec Authority**: WorkloadExposureRegistrar Controller (creates/updates for each Workload)
+- **Status Authority**: Runtime Controllers only
+- **Mirroring**: ExposureMirror Controller mirrors `exposures[0].url` to `Workload.status.endpoint` and normalizes conditions
+- **Visibility**: Hidden from users via RBAC; internal orchestration resource
+- **Lifecycle**: Same name as target Workload; OwnerReference ensures garbage collection
 
 See: [`control-plane.md`](control-plane.md) for who watches/writes what, and [`validation.md`](validation.md) for schema/CEL invariants.
 
