@@ -22,8 +22,8 @@ It complements:
   - Processes `ResourceClaim` deletion according to `DeprovisionPolicy` before removing Workload finalizer
 
 ### Provisioner (PF/vendor)
-- **Watches:** `ResourceClaim` for its `spec.type`; own `Secret/ConfigMap`; external service APIs as needed
-- **Creates/updates (objects):** `Secret/ConfigMap` with credentials/config (same namespace)
+- **Watches:** `ResourceClaim` for its `spec.type`; own resources; external service APIs as needed
+- **Creates/updates (objects):** `Secret/ConfigMap` with credentials/config; for development-grade provisioning, may also create `StatefulSet/Deployment`, `Service`, `PVC` (same namespace)
 - **Updates (status):** `ResourceClaim.status` (`phase`, `reason`, `message`, `outputs`, timestamps)
 - **Produces image outputs (when applicable):** Provisioners for `image|build|buildpack` types publish an OCI reference as `ResourceClaim.status.outputs.image`.
 - **Plan linkage:** The Orchestrator emits a `WorkloadPlan` projection that binds that output into the final container image, e.g.:
@@ -62,6 +62,8 @@ It complements:
 | `WorkloadPlan` (internal)   | Runtime, Orchestrator, WorkloadExposureRegistrar | **Orchestrator** (single writer) | —                      | Same name as Workload; OwnerRef = Workload |
 | `WorkloadExposure` (internal) | ExposureMirror, WorkloadExposureRegistrar, Runtime | **WorkloadExposureRegistrar** | **Runtime Controllers**   | Same name as Workload; OwnerRef = Workload; hidden from users |
 | `Secret/ConfigMap` (outputs) | Runtime (read), Orchestrator (not required) | **Provisioner**              | —                         | Same namespace; hidden from users |
+| `StatefulSet/Deployment` (dev) | —                                       | **Provisioner** (development-grade) | —                         | Development-grade provisioning only; same namespace |
+| `Service` (dev)             | —                                       | **Provisioner** (development-grade) | —                         | Development-grade provisioning only; same namespace |
 
 ## Claim ↔ Plan linkage (how they meet)
 - **Key-based mapping:** `WorkloadPlan.spec.projection` refers to dependencies by `claimKey` (the key in `Workload.spec.resources`).  
