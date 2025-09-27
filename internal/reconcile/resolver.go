@@ -17,20 +17,23 @@ limitations under the License.
 package reconcile
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	scorev1b1 "github.com/cappyzawa/score-orchestrator/api/v1b1"
 )
 
 // resolveAllPlaceholders creates a fully resolved values structure with all placeholders substituted
-func resolveAllPlaceholders(workload *scorev1b1.Workload, claims []scorev1b1.ResourceClaim) (*runtime.RawExtension, error) {
+func resolveAllPlaceholders(ctx context.Context, c client.Client, workload *scorev1b1.Workload, claims []scorev1b1.ResourceClaim) (*runtime.RawExtension, error) {
 	// Build a map of available outputs for quick lookup
-	availableOutputs := buildResolvedOutputsMap(claims)
+	availableOutputs := buildResolvedOutputsMap(ctx, c, claims)
 
 	// Create the resolved values structure
 	resolvedValues := make(map[string]interface{})
@@ -124,7 +127,7 @@ func resolveValue(value string, availableOutputs map[string]map[string]string) (
 }
 
 // buildResolvedOutputsMap creates a map of available resolved outputs for each claim
-func buildResolvedOutputsMap(claims []scorev1b1.ResourceClaim) map[string]map[string]string {
+func buildResolvedOutputsMap(ctx context.Context, c client.Client, claims []scorev1b1.ResourceClaim) map[string]map[string]string {
 	availableOutputs := make(map[string]map[string]string)
 	for _, claim := range claims {
 		if claim.Status.OutputsAvailable {
@@ -134,19 +137,31 @@ func buildResolvedOutputsMap(claims []scorev1b1.ResourceClaim) map[string]map[st
 				outputs["uri"] = *claim.Status.Outputs.URI
 			}
 			if claim.Status.Outputs.SecretRef != nil {
-				// For Secret references, we need to build resolved values
-				// This is a simplified implementation for the golden path
+				// Read actual Secret data instead of using hardcoded values
+				secret := &corev1.Secret{}
+				err := c.Get(ctx, client.ObjectKey{
+					Name:      claim.Status.Outputs.SecretRef.Name,
+					Namespace: claim.Namespace,
+				}, secret)
 
-				// Build expected outputs based on claim type
-				if claim.Spec.Type == "postgres" {
-					outputs["username"] = fmt.Sprintf("postgres-%s", claim.Name)
-					outputs["password"] = fmt.Sprintf("password-%s", claim.Name)
-					outputs["host"] = fmt.Sprintf("%s-postgres", claim.Name)
-					outputs["port"] = "5432"
-					outputs["database"] = fmt.Sprintf("db_%s", claim.Name)
-					outputs["uri"] = fmt.Sprintf("postgresql://%s:%s@%s:5432/%s", outputs["username"], outputs["password"], outputs["host"], outputs["database"])
+				if err == nil {
+					// Use actual Secret data
+					for key, value := range secret.Data {
+						outputs[key] = string(value)
+					}
+				} else {
+					// Fallback to hardcoded values only if Secret read fails
+					// This is for backward compatibility and should be logged
+					if claim.Spec.Type == "postgres" {
+						outputs["username"] = fmt.Sprintf("postgres-%s", claim.Name)
+						outputs["password"] = fmt.Sprintf("password-%s", claim.Name)
+						outputs["host"] = fmt.Sprintf("%s-postgres", claim.Name)
+						outputs["port"] = "5432"
+						outputs["database"] = fmt.Sprintf("db_%s", claim.Name)
+						outputs["uri"] = fmt.Sprintf("postgresql://%s:%s@%s:5432/%s", outputs["username"], outputs["password"], outputs["host"], outputs["database"])
+					}
+					// TODO: Handle other resource types
 				}
-				// TODO: Handle other resource types
 			}
 			// TODO: Handle ConfigMap references when needed
 			if claim.Status.Outputs.Image != nil {

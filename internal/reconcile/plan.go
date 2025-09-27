@@ -53,7 +53,7 @@ func UpsertWorkloadPlan(ctx context.Context, c client.Client, workload *scorev1b
 	}
 
 	// Resolve all placeholders to create final values
-	resolvedValues, err := resolveAllPlaceholders(workload, claims)
+	resolvedValues, err := resolveAllPlaceholders(ctx, c, workload, claims)
 	if err != nil {
 		return fmt.Errorf("failed to resolve placeholders: %w", err)
 	}
