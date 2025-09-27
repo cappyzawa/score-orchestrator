@@ -17,11 +17,13 @@ limitations under the License.
 package reconcile
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
 
 	"k8s.io/utils/ptr"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	scorev1b1 "github.com/cappyzawa/score-orchestrator/api/v1b1"
 )
@@ -88,7 +90,11 @@ func TestResolveAllPlaceholders(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resolvedValues, err := resolveAllPlaceholders(tt.workload, tt.claims)
+			// Create a fake client for testing
+			fakeClient := fake.NewClientBuilder().Build()
+			ctx := context.TODO()
+
+			resolvedValues, err := resolveAllPlaceholders(ctx, fakeClient, tt.workload, tt.claims)
 
 			if tt.expectError {
 				if err == nil {
