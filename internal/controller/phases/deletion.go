@@ -101,9 +101,9 @@ func (p *DeletionPhase) processDeprovisionPolicy(ctx context.Context, phaseCtx *
 
 	switch policy {
 	case DeprovisionPolicyDelete:
-		// Default behavior: let owner reference handle deletion
-		log.V(1).Info("Processing claim with Delete policy - letting owner reference handle deletion")
-		return nil
+		// Explicitly delete the ResourceClaim since owner reference doesn't work with finalizers
+		log.V(1).Info("Processing claim with Delete policy - explicitly deleting ResourceClaim")
+		return p.deleteResourceClaim(ctx, phaseCtx, claim)
 
 	case DeprovisionPolicyRetain:
 		// Remove owner reference to retain the claim but detach from workload
@@ -117,8 +117,8 @@ func (p *DeletionPhase) processDeprovisionPolicy(ctx context.Context, phaseCtx *
 
 	default:
 		// Default to Delete policy if not specified
-		log.V(1).Info("Processing claim with default Delete policy")
-		return nil
+		log.V(1).Info("Processing claim with default Delete policy - explicitly deleting ResourceClaim")
+		return p.deleteResourceClaim(ctx, phaseCtx, claim)
 	}
 }
 
@@ -148,6 +148,17 @@ func (p *DeletionPhase) removeOwnerReference(ctx context.Context, phaseCtx *Phas
 
 	// Update the claim
 	return phaseCtx.Client.Update(ctx, claimCopy)
+}
+
+// deleteResourceClaim explicitly deletes a ResourceClaim
+func (p *DeletionPhase) deleteResourceClaim(ctx context.Context, phaseCtx *PhaseContext, claim *scorev1b1.ResourceClaim) error {
+	// Check if already being deleted
+	if !claim.DeletionTimestamp.IsZero() {
+		return nil // Already being deleted
+	}
+
+	// Delete the ResourceClaim - Provisioner controller will handle finalizer removal
+	return phaseCtx.Client.Delete(ctx, claim)
 }
 
 // ShouldSkip determines if deletion phase should be skipped

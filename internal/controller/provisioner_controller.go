@@ -437,6 +437,14 @@ func (r *ProvisionerReconciler) filterSupportedTypes(obj client.Object) bool {
 		return false
 	}
 
+	// Always allow deletion events to pass through to ensure proper cleanup
+	if claim.GetDeletionTimestamp() != nil {
+		fmt.Printf("DEBUG: filterSupportedTypes - ResourceClaim %s/%s is being deleted, allowing event\n",
+			claim.Namespace, claim.Name)
+		return true
+	}
+
+	// For non-deletion events, check if type is supported
 	supported := r.supportedTypes[claim.Spec.Type]
 	fmt.Printf("DEBUG: filterSupportedTypes - ResourceClaim %s/%s type=%s, supported=%v, supportedTypes=%+v\n",
 		claim.Namespace, claim.Name, claim.Spec.Type, supported, r.supportedTypes)
