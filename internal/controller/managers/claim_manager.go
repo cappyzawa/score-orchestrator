@@ -26,9 +26,10 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
 	scorev1b1 "github.com/cappyzawa/score-orchestrator/api/v1b1"
 	"github.com/cappyzawa/score-orchestrator/internal/conditions"
@@ -118,11 +119,21 @@ func (cm *ClaimManager) upsertResourceClaim(ctx context.Context, workload *score
 			Spec: desiredSpec,
 		}
 
-		// Set owner reference
-		if err := controllerutil.SetControllerReference(workload, claim, cm.scheme); err != nil {
-			log.Error(err, "Failed to set owner reference")
-			return fmt.Errorf("failed to set owner reference: %w", err)
+		// Set owner reference with blockOwnerDeletion=false to allow proper deletion
+		gvk, err := apiutil.GVKForObject(workload, cm.scheme)
+		if err != nil {
+			log.Error(err, "Failed to get GVK for workload")
+			return fmt.Errorf("failed to get GVK for workload: %w", err)
 		}
+
+		claim.SetOwnerReferences([]metav1.OwnerReference{{
+			APIVersion:         gvk.GroupVersion().String(),
+			Kind:               gvk.Kind,
+			Name:               workload.GetName(),
+			UID:                workload.GetUID(),
+			Controller:         ptr.To(true),
+			BlockOwnerDeletion: ptr.To(false), // Allow owner deletion even with finalizers
+		}})
 
 		if err := cm.client.Create(ctx, claim); err != nil {
 			log.Error(err, "Failed to create ResourceClaim")

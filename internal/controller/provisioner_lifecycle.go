@@ -120,6 +120,11 @@ func (lm *ResourceClaimLifecycleManager) ShouldReconcile(claim *scorev1b1.Resour
 		return false
 	}
 
+	// Always reconcile if being deleted (to handle cleanup)
+	if lm.IsBeingDeleted(claim) {
+		return true
+	}
+
 	// Don't reconcile if bound and generation hasn't changed
 	if claim.Status.Phase == scorev1b1.ResourceClaimPhaseBound {
 		if claim.Status.ObservedGeneration == claim.Generation {
