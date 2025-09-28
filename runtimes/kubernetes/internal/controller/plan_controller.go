@@ -421,7 +421,7 @@ func (r *KubernetesRuntimePlanReconciler) buildService(plan *scorev1b1.WorkloadP
 func (r *KubernetesRuntimePlanReconciler) extractResolvedEnv(resolvedValues map[string]interface{}, containerName string) (map[string]string, error) {
 	result := make(map[string]string)
 
-	// Navigate to containers.<containerName>.variables
+	// Navigate to containers.<containerName>.env
 	containersRaw, exists := resolvedValues["containers"]
 	if !exists {
 		return result, nil
@@ -442,18 +442,18 @@ func (r *KubernetesRuntimePlanReconciler) extractResolvedEnv(resolvedValues map[
 		return result, fmt.Errorf("container %s is not a map", containerName)
 	}
 
-	variablesRaw, exists := containerMap["variables"]
+	envRaw, exists := containerMap["env"]
 	if !exists {
 		return result, nil
 	}
 
-	variablesMap, ok := variablesRaw.(map[string]interface{})
+	envMap, ok := envRaw.(map[string]interface{})
 	if !ok {
-		return result, fmt.Errorf("variables field for container %s is not a map", containerName)
+		return result, fmt.Errorf("env field for container %s is not a map", containerName)
 	}
 
 	// Convert all values to strings
-	for key, value := range variablesMap {
+	for key, value := range envMap {
 		if value == nil {
 			result[key] = ""
 		} else {
