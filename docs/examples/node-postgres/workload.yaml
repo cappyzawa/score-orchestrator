@@ -8,12 +8,7 @@ spec:
     app:
       image: ghcr.io/score-spec/sample-app-gif:main
       variables:
-        DATABASE_URL: "postgresql://${resources.db.username}:${resources.db.password}@${resources.db.host}:${resources.db.port}/${resources.db.database}"
-        DB_HOST: "${resources.db.host}"
-        DB_PORT: "${resources.db.port}"
-        DB_NAME: "${resources.db.database}"
-        DB_USER: "${resources.db.username}"
-        DB_PASSWORD: "${resources.db.password}"
+        PG_CONNECTION_STRING: "postgresql://${resources.db.username}:${resources.db.password}@${resources.db.host}:${resources.db.port}/${resources.db.database}?sslmode=disable"
   service:
     ports:
       - port: 8080
