@@ -8,11 +8,18 @@ spec:
     app:
       image: ghcr.io/score-spec/sample-app-gif:main
       variables:
+        PORT: "3000"
+        MESSAGE: "Hello, World!"
+        DB_DATABASE: "${resources.db.database}"
+        DB_USER: "${resources.db.username}"
+        DB_PASSWORD: "${resources.db.password}"
+        DB_HOST: "${resources.db.host}"
+        DB_PORT: "${resources.db.port}"
         PG_CONNECTION_STRING: "postgresql://${resources.db.username}:${resources.db.password}@${resources.db.host}:${resources.db.port}/${resources.db.database}?sslmode=disable"
   service:
     ports:
       - port: 8080
-        targetPort: 8080
+        targetPort: 3000
         protocol: TCP
   resources:
     db:

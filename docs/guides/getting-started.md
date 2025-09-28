@@ -92,7 +92,7 @@ You'll learn how the orchestrator manages the **Workload → ResourceClaim → W
 
 ## Hello Web (Minimal Workload)
 
-Let's start with a simple web application using Score's official sample image.
+Let's start with a simple web application using Score's official sample image. This example is based on the [Score Get Started guide](https://docs.score.dev/docs/get-started/).
 
 1. **Apply the hello web workload**:
    ```bash
@@ -180,7 +180,7 @@ When you apply a Workload, the orchestrator:
 
 ## Add a Dependency (Application + Postgres)
 
-Now let's make it more interesting by adding a database dependency. This will demonstrate how the orchestrator provisions a **development-grade PostgreSQL instance** and binds it to your application.
+Now let's make it more interesting by adding a database dependency. This will demonstrate how the orchestrator provisions a **development-grade PostgreSQL instance** and binds it to your application. This example is based on the [Node.js + PostgreSQL example](https://docs.score.dev/docs/examples/nodejs-postgres/).
 
 1. **Apply the enhanced workload**:
    ```bash
