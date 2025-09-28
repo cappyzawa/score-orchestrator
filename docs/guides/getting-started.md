@@ -1,6 +1,6 @@
 # Getting Started with Score Orchestrator
 
-This guide walks you through using the Score Orchestrator to deploy and manage workloads, mirroring the learning flow of the [official Score tutorial](https://docs.score.dev/docs/get-started/score-compose-hello-world/) but demonstrating the orchestrator's unique capabilities around **status observation** and **dependency binding**.
+This guide walks you through using the Score Orchestrator to deploy and manage workloads, mirroring the learning flow of the [official Score tutorial](https://docs.score.dev/docs/get-started/score-compose-hello-world/) but demonstrating the orchestrator's unique capabilities around **status observation** and **dependency claiming**.
 
 You'll learn how the orchestrator manages the **Workload → ResourceClaim → WorkloadPlan** relationships by observing status changes rather than diving into implementation details.
 
@@ -38,10 +38,10 @@ You'll learn how the orchestrator manages the **Workload → ResourceClaim → W
 4. **Build and load controller images**:
    ```bash
    # Build the orchestrator controller image
-   make docker-build IMG=example.com/kbinit:latest
+   make docker-build IMG=score-orchestrator:latest
 
    # Load image into Kind cluster
-   kind load docker-image example.com/kbinit:latest --name score-demo
+   kind load docker-image score-orchestrator:latest --name score-demo
 
    # Build the Kubernetes runtime controller image
    make docker-build-runtime
@@ -53,7 +53,7 @@ You'll learn how the orchestrator manages the **Workload → ResourceClaim → W
 5. **Deploy the controllers**:
    ```bash
    # Deploy the orchestrator controller
-   make deploy IMG=example.com/kbinit:latest
+   make deploy IMG=score-orchestrator:latest
 
    # Deploy the Kubernetes runtime controller
    make deploy-runtime
@@ -178,88 +178,29 @@ When you apply a Workload, the orchestrator:
 4. **The runtime controller** creates actual Kubernetes resources (Deployment, Service, etc.)
 5. **Sets endpoint** once the service is available
 
-## Add a Dependency (Application + Postgres)
+## Understanding Dependencies & Resource Claiming
 
-Now let's make it more interesting by adding a database dependency. This will demonstrate how the orchestrator provisions a **development-grade PostgreSQL instance** and binds it to your application. This example is based on the [Node.js + PostgreSQL example](https://docs.score.dev/docs/examples/nodejs-postgres/).
+The hello-web example above already demonstrates **dependency management**. Notice that the workload includes a PostgreSQL dependency and the orchestrator automatically:
 
-1. **Apply the enhanced workload**:
-   ```bash
-   kubectl apply -f docs/examples/node-postgres/workload.yaml
-   ```
+1. **Created a ResourceClaim** for the database
+2. **Provisioned a PostgreSQL instance**
+3. **Projected connection details** into environment variables
+4. **Tracked dependency status** in the `ClaimsReady` condition
 
-2. **Watch the dependency binding process**:
-   ```bash
-   # Watch the main workload
-   kubectl get workload node-postgres-app -w
+You can explore this further:
 
-   # In another terminal, watch resource claims
-   kubectl get resourceclaim.score.dev -w
-   ```
+```bash
+# Check the resource claim that was automatically created
+kubectl get resourceclaim.score.dev
 
-3. **Observe PostgreSQL provisioning**:
-   ```bash
-   # Watch the workload status
-   kubectl get workload node-postgres-app -o yaml
+# Inspect dependency claiming details
+kubectl describe resourceclaim.score.dev hello-web-db
 
-   # Check that a ResourceClaim was created
-   kubectl get resourceclaim.score.dev
+# See how database credentials were projected into the WorkloadPlan
+kubectl get workloadplan hello-web -o yaml
+```
 
-   # Inspect the claim details
-   kubectl describe resourceclaim.score.dev <claim-name>
-
-   # Verify PostgreSQL StatefulSet is created
-   kubectl get statefulset
-
-   # Check PostgreSQL Service
-   kubectl get service | grep postgres
-
-   # Verify PostgreSQL pod is running
-   kubectl get pods | grep postgres
-   ```
-
-4. **Verify application deployment with database connection**:
-   ```bash
-   # Verify the WorkloadPlan includes environment variable mappings
-   kubectl get workloadplan node-postgres-app -o yaml
-
-   # Check that Kubernetes resources are created with environment variables
-   kubectl get deployment node-postgres-app -o yaml | grep -A 10 env:
-
-   # Wait for both application and database to be ready
-   kubectl wait --for=condition=ready pod -l app=node-postgres-app --timeout=300s
-   kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=postgres --timeout=300s
-   ```
-
-5. **Access the application with database**:
-   ```bash
-   # Set up port forwarding to access the application
-   kubectl port-forward service/node-postgres-app 8080:8080 &
-
-   # Test the application - it should now be able to connect to PostgreSQL
-   curl http://localhost:8080
-
-   # Use -i flag to see headers
-   curl -i http://localhost:8080
-
-   # Stop port forwarding when done
-   pkill -f "kubectl port-forward"
-   ```
-
-   You should see a response like:
-   ```
-   SQL VERSION: PostgreSQL 16.1 on aarch64-unknown-linux-musl, compiled by gcc (Alpine 13.2.1_git20231014) 13.2.1 20231014, 64-bit
-   ```
-
-   And the response headers will include:
-   ```
-   X-Env: kubernetes
-   ```
-
-   This confirms that the application successfully connected to the PostgreSQL database that was automatically provisioned by the orchestrator.
-
-   The workload now shows a `ClaimsReady` condition that tracks dependency status.
-
-### Understanding Resource Binding
+### Understanding Resource Claiming
 
 When you declare a resource dependency:
 
@@ -272,7 +213,7 @@ resources:
 The orchestrator:
 1. **Creates a ResourceClaim** to request the database
 2. **Waits for a Provisioner** to fulfill the claim (provide connection details)
-3. **Updates ClaimsReady condition** based on binding progress
+3. **Updates ClaimsReady condition** based on claiming progress
 4. **Projects database connection details** into environment variables in the WorkloadPlan
 5. **Runtime controller** creates Deployment with the resolved environment variables
 6. **Sets Ready=True** only when **InputsValid ∧ ClaimsReady ∧ RuntimeReady**
@@ -297,8 +238,8 @@ The `reason` field uses a fixed vocabulary for consistent tooling:
 | `Succeeded` | Operation completed successfully |
 | `SpecInvalid` | Workload specification is invalid |
 | `PolicyViolation` | Blocked by admission policy |
-| `BindingPending` | Waiting for resource binding |
-| `BindingFailed` | Resource binding failed |
+| `BindingPending` | Waiting for resource claiming |
+| `BindingFailed` | Resource claiming failed |
 | `RuntimeProvisioning` | Runtime is being set up |
 | `RuntimeDegraded` | Runtime is unhealthy |
 | `QuotaExceeded` | Resource quota exceeded |
@@ -327,12 +268,12 @@ Let's see how the orchestrator handles updates.
 
 1. **Update the workload** (e.g., change an environment variable):
    ```bash
-   kubectl patch workload node-postgres-app --type='merge' -p='{"spec":{"containers":{"app":{"variables":{"NEW_VAR":"updated_value"}}}}}'
+   kubectl patch workload hello-web --type='merge' -p='{"spec":{"containers":{"app":{"variables":{"NEW_VAR":"updated_value"}}}}}'
    ```
 
 2. **Watch the conditions converge**:
    ```bash
-   kubectl get workload node-postgres-app -w
+   kubectl get workload hello-web -w
    ```
 
    You'll see conditions temporarily become `False` as the orchestrator processes the change, then return to `True` once the update is complete.
@@ -341,9 +282,9 @@ Let's see how the orchestrator handles updates.
 
 When you're done experimenting:
 
-1. **Delete the workloads**:
+1. **Delete the workload**:
    ```bash
-   kubectl delete workload hello-web node-postgres-app
+   kubectl delete workload hello-web
    ```
 
 2. **Verify cleanup**:
@@ -365,7 +306,7 @@ The orchestrator automatically handles cleanup of associated `ResourceClaim` and
 ## What's Next?
 
 - **Explore Runtime Selection**: Learn how the orchestrator chooses between different runtime backends
-- **Advanced Dependencies**: Experiment with different resource types and complex binding scenarios
+- **Advanced Dependencies**: Experiment with different resource types and complex claiming scenarios
 - **Status Monitoring**: Build tooling around the standardized condition vocabulary
 - **Troubleshooting**: Use the [troubleshooting guide](../spec/lifecycle.md) when things don't go as expected
 

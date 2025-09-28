@@ -42,7 +42,7 @@ var (
 
 	// projectImage is the name of the image which will be build and loaded
 	// with the code source changes to be tested.
-	projectImage = "example.com/kbinit:latest"
+	projectImage = "score-orchestrator:latest"
 	// runtimeImage is the name of the kubernetes-runtime controller image
 	runtimeImage = "kubernetes-runtime:latest"
 )
@@ -53,7 +53,7 @@ var (
 // CertManager.
 func TestE2E(t *testing.T) {
 	RegisterFailHandler(Fail)
-	_, _ = fmt.Fprintf(GinkgoWriter, "Starting kbinit integration test suite\n")
+	_, _ = fmt.Fprintf(GinkgoWriter, "Starting score-orchestrator integration test suite\n")
 	RunSpecs(t, "e2e suite")
 }
 

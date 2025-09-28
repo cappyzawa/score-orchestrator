@@ -2,7 +2,7 @@ apiVersion: score.dev/v1b1
 kind: Workload
 metadata:
   name: user-hint-test
-  namespace: kbinit-system
+  namespace: default
   annotations:
     score.dev/profile: "batch-job"
   labels:

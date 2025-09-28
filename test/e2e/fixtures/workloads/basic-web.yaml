@@ -2,7 +2,7 @@ apiVersion: score.dev/v1b1
 kind: Workload
 metadata:
   name: basic-web-test
-  namespace: kbinit-system
+  namespace: default
   labels:
     app: basic-web
     team: e2e-test

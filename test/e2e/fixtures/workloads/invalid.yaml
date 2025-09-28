@@ -2,7 +2,7 @@ apiVersion: score.dev/v1b1
 kind: Workload
 metadata:
   name: invalid-test
-  namespace: kbinit-system
+  namespace: default
   labels:
     team: e2e-test
 spec:

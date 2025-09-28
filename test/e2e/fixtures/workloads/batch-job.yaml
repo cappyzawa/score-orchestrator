@@ -2,7 +2,7 @@ apiVersion: score.dev/v1b1
 kind: Workload
 metadata:
   name: batch-job-test
-  namespace: kbinit-system
+  namespace: default
   labels:
     workload-type: batch
     team: e2e-test
